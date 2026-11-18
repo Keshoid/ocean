@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Глубина</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#070c11">
+<style>
+:root { --ink: #dfe7ea; --dim: #8b9ca4; --lava: #ff7b24; --glow: #ffb561; --pit: #070c11; }
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; overflow: hidden; background: var(--pit); color: var(--ink);
+  font: 400 clamp(14px, .55vw + .75vh, 21px)/1.5 "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; user-select: none; }
+canvas { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; cursor: crosshair; visibility: hidden; }
+.ready canvas { visibility: visible; }
+
+/* the menu is a dark slab on the left; the live scene stays sharp behind it, just dimmed */
+#menu { position: fixed; left: 0; top: 0; bottom: 0; width: 100%; display: flex; flex-direction: column; justify-content: center; gap: 1.5em;
+  padding: 3em clamp(1.5em, 7vw, 8em); background: linear-gradient(100deg, #070c11f5 0, #070c11d9 28em, #070c1173 52em, #070c1140 100%);
+  transition: transform .7s cubic-bezier(.6, 0, .3, 1), opacity .7s; }
+.dive #menu { transform: translateX(-6em); opacity: 0; pointer-events: none; }
+#eyebrow { margin: 0; font-size: .8em; letter-spacing: .5em; text-transform: uppercase; color: var(--lava); }
+h1 { margin: -.15em 0 0 -.04em; font-size: 4.2em; font-weight: 200; line-height: 1.05; letter-spacing: .32em; text-transform: uppercase; color: #f4efe6; }
+h1::after { content: ""; display: block; width: 3.2em; height: 2px; margin-top: .35em; background: linear-gradient(90deg, var(--lava), var(--glow) 60%, transparent);
+  box-shadow: 0 0 14px var(--lava); }
+p { margin: 0; }
+#tag { max-width: 26em; color: var(--dim); }
+
+#load { display: flex; align-items: center; gap: 1em; width: min(24em, 100%); }
+#track { flex: 1; height: 2px; background: #ffffff1f; }
+#bar { height: 100%; background: var(--glow); transform: scaleX(0); transform-origin: left; transition: transform .25s linear; box-shadow: 0 0 10px var(--lava); }
+#status { min-height: 1.5em; font-size: .85em; color: var(--dim); white-space: pre-wrap; max-width: 44em; }
+.err #status { color: #ff9c8a; user-select: text; }
+.err #track, .ready #load, .ready #status { display: none; }
+
+button { font: inherit; color: inherit; background: none; border: 1px solid #ffffff38; border-radius: 2px; cursor: pointer; }
+#go { display: none; align-self: flex-start; padding: .75em 2.6em .8em; font-size: 1.1em; letter-spacing: .28em; text-transform: uppercase;
+  border-color: var(--lava); color: var(--glow); transition: background .2s, color .2s, box-shadow .2s; }
+#go:hover, #go:focus-visible { background: var(--lava); color: #170800; box-shadow: 0 0 28px #ff7b2480; outline: 0; }
+.ready #go { display: block; }
+
+#keys { display: grid; grid-template-columns: max-content auto; gap: .45em 1.1em; align-items: center; font-size: .85em; color: var(--dim); }
+kbd { display: inline-block; min-width: 1.9em; padding: .05em .5em .12em; margin-right: .2em; text-align: center; font: inherit; color: var(--ink);
+  border: 1px solid #ffffff33; border-bottom-width: 2px; border-radius: 3px; background: #ffffff0a; }
+#qual { display: flex; align-items: center; gap: 1em; font-size: .85em; color: var(--dim); }
+#seg { display: flex; }
+#seg button { padding: .3em 1.1em .35em; margin-left: -1px; color: var(--dim); }
+#seg button.on { color: #170800; background: var(--glow); border-color: var(--glow); position: relative; }
+
+/* instruments projected on the visor glass */
+#visor { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; pointer-events: none; opacity: 0; transition: opacity .6s; color: #c9f4ff;
+  mix-blend-mode: screen; font-weight: 400; letter-spacing: .16em; text-shadow: 0 0 .25em #7fdcff, 0 0 .9em #2fc4ff; }
+#visor.on { opacity: .82; }
+#visor > div { position: absolute; display: flex; flex-direction: column; }
+#visor small { font-size: .62em; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
+#visor b { font-weight: 400; font-size: 1.25em; margin-bottom: .45em; }
+#v-top { top: 6.5%; left: 50%; transform: translateX(-50%); align-items: center; font-size: 1em; }
+#v-top::after { content: ""; width: 1px; height: .7em; margin-top: .3em; background: currentColor; }
+#v-left { left: 16%; bottom: 13%; padding-left: .8em; border-left: 2px solid #a9ecffb0; }
+#v-right { right: 16%; bottom: 13%; padding-right: .8em; border-right: 2px solid #a9ecffb0; align-items: flex-end; }
+#visor.hot .t { color: #ffb070; text-shadow: 0 0 .7em #ff5a1a; }
+
+#burger { display: none; position: fixed; right: 12px; top: 12px; width: 44px; height: 44px; font-size: 20px; background: #070c11a6; }
+#hud { display: none; position: fixed; left: 12px; bottom: 10px; font: 12px/1.3 Consolas, "Courier New", monospace; color: var(--glow); text-shadow: 0 0 3px #000, 0 0 3px #000; }
+@media (pointer: coarse) { .dive #burger { display: block; } #keys { display: none; } }
+.shot #menu, .shot #hud, .shot #burger { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="menu">
+  <p id="eyebrow">затонувший город</p>
+  <h1>Глубина</h1>
+  <p id="tag">Вулканическое дно, руины и лес водорослей — всё построено кодом прямо у вас в браузере, без единой картинки или модели.</p>
+  <div id="load"><div id="track"><div id="bar"></div></div></div>
+  <p id="status">Загрузка…</p>
+  <button id="go">Погрузиться</button>
+  <div id="keys">
+    <span>мышь</span><span>осмотреться</span>
+    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>плыть</span>
+    <span><kbd>E</kbd><kbd>Q</kbd></span><span>вверх и вниз</span>
+    <span><kbd>Shift</kbd></span><span>быстрее</span>
+    <span><kbd>1</kbd>…<kbd>6</kbd></span><span>перенестись в интересное место</span>
+    <span><kbd>V</kbd><kbd>G</kbd></span><span>снять шлем, убрать приборы</span>
+    <span><kbd>M</kbd><kbd>H</kbd><kbd>Esc</kbd></span><span>звук, счётчик кадров, меню</span>
+  </div>
+  <div id="qual"><span>Детализация</span><div id="seg"><button data-q="low">низкая</button><button data-q="medium">средняя</button><button data-q="high">высокая</button></div></div>
+</div>
+<div id="visor">
+  <div id="v-top"><span id="v-head">С 000°</span></div>
+  <div id="v-left"><small>глубина</small><b><span id="v-depth">0.0</span> м</b></div>
+  <div id="v-right"><small>воздух</small><b><span id="v-air">98</span> %</b><small>вода</small><b class="t"><span id="v-temp">8</span> °C</b></div>
+</div>
+<button id="burger">≡</button>
+<div id="hud"></div>
+<script>/*JS*/</script>
+</body>
+</html>

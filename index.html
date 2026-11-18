@@ -1,0 +1,1120 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Глубина</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#070c11">
+<style>
+:root { --ink: #dfe7ea; --dim: #8b9ca4; --lava: #ff7b24; --glow: #ffb561; --pit: #070c11; }
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; overflow: hidden; background: var(--pit); color: var(--ink);
+  font: 400 clamp(14px, .55vw + .75vh, 21px)/1.5 "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; user-select: none; }
+canvas { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; cursor: crosshair; visibility: hidden; }
+.ready canvas { visibility: visible; }
+
+/* the menu is a dark slab on the left; the live scene stays sharp behind it, just dimmed */
+#menu { position: fixed; left: 0; top: 0; bottom: 0; width: 100%; display: flex; flex-direction: column; justify-content: center; gap: 1.5em;
+  padding: 3em clamp(1.5em, 7vw, 8em); background: linear-gradient(100deg, #070c11f5 0, #070c11d9 28em, #070c1173 52em, #070c1140 100%);
+  transition: transform .7s cubic-bezier(.6, 0, .3, 1), opacity .7s; }
+.dive #menu { transform: translateX(-6em); opacity: 0; pointer-events: none; }
+#eyebrow { margin: 0; font-size: .8em; letter-spacing: .5em; text-transform: uppercase; color: var(--lava); }
+h1 { margin: -.15em 0 0 -.04em; font-size: 4.2em; font-weight: 200; line-height: 1.05; letter-spacing: .32em; text-transform: uppercase; color: #f4efe6; }
+h1::after { content: ""; display: block; width: 3.2em; height: 2px; margin-top: .35em; background: linear-gradient(90deg, var(--lava), var(--glow) 60%, transparent);
+  box-shadow: 0 0 14px var(--lava); }
+p { margin: 0; }
+#tag { max-width: 26em; color: var(--dim); }
+
+#load { display: flex; align-items: center; gap: 1em; width: min(24em, 100%); }
+#track { flex: 1; height: 2px; background: #ffffff1f; }
+#bar { height: 100%; background: var(--glow); transform: scaleX(0); transform-origin: left; transition: transform .25s linear; box-shadow: 0 0 10px var(--lava); }
+#status { min-height: 1.5em; font-size: .85em; color: var(--dim); white-space: pre-wrap; max-width: 44em; }
+.err #status { color: #ff9c8a; user-select: text; }
+.err #track, .ready #load, .ready #status { display: none; }
+
+button { font: inherit; color: inherit; background: none; border: 1px solid #ffffff38; border-radius: 2px; cursor: pointer; }
+#go { display: none; align-self: flex-start; padding: .75em 2.6em .8em; font-size: 1.1em; letter-spacing: .28em; text-transform: uppercase;
+  border-color: var(--lava); color: var(--glow); transition: background .2s, color .2s, box-shadow .2s; }
+#go:hover, #go:focus-visible { background: var(--lava); color: #170800; box-shadow: 0 0 28px #ff7b2480; outline: 0; }
+.ready #go { display: block; }
+
+#keys { display: grid; grid-template-columns: max-content auto; gap: .45em 1.1em; align-items: center; font-size: .85em; color: var(--dim); }
+kbd { display: inline-block; min-width: 1.9em; padding: .05em .5em .12em; margin-right: .2em; text-align: center; font: inherit; color: var(--ink);
+  border: 1px solid #ffffff33; border-bottom-width: 2px; border-radius: 3px; background: #ffffff0a; }
+#qual { display: flex; align-items: center; gap: 1em; font-size: .85em; color: var(--dim); }
+#seg { display: flex; }
+#seg button { padding: .3em 1.1em .35em; margin-left: -1px; color: var(--dim); }
+#seg button.on { color: #170800; background: var(--glow); border-color: var(--glow); position: relative; }
+
+/* instruments projected on the visor glass */
+#visor { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; pointer-events: none; opacity: 0; transition: opacity .6s; color: #c9f4ff;
+  mix-blend-mode: screen; font-weight: 400; letter-spacing: .16em; text-shadow: 0 0 .25em #7fdcff, 0 0 .9em #2fc4ff; }
+#visor.on { opacity: .82; }
+#visor > div { position: absolute; display: flex; flex-direction: column; }
+#visor small { font-size: .62em; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
+#visor b { font-weight: 400; font-size: 1.25em; margin-bottom: .45em; }
+#v-top { top: 6.5%; left: 50%; transform: translateX(-50%); align-items: center; font-size: 1em; }
+#v-top::after { content: ""; width: 1px; height: .7em; margin-top: .3em; background: currentColor; }
+#v-left { left: 16%; bottom: 13%; padding-left: .8em; border-left: 2px solid #a9ecffb0; }
+#v-right { right: 16%; bottom: 13%; padding-right: .8em; border-right: 2px solid #a9ecffb0; align-items: flex-end; }
+#visor.hot .t { color: #ffb070; text-shadow: 0 0 .7em #ff5a1a; }
+
+#burger { display: none; position: fixed; right: 12px; top: 12px; width: 44px; height: 44px; font-size: 20px; background: #070c11a6; }
+#hud { display: none; position: fixed; left: 12px; bottom: 10px; font: 12px/1.3 Consolas, "Courier New", monospace; color: var(--glow); text-shadow: 0 0 3px #000, 0 0 3px #000; }
+@media (pointer: coarse) { .dive #burger { display: block; } #keys { display: none; } }
+.shot #menu, .shot #hud, .shot #burger { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="menu">
+  <p id="eyebrow">затонувший город</p>
+  <h1>Глубина</h1>
+  <p id="tag">Вулканическое дно, руины и лес водорослей — всё построено кодом прямо у вас в браузере, без единой картинки или модели.</p>
+  <div id="load"><div id="track"><div id="bar"></div></div></div>
+  <p id="status">Загрузка…</p>
+  <button id="go">Погрузиться</button>
+  <div id="keys">
+    <span>мышь</span><span>осмотреться</span>
+    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>плыть</span>
+    <span><kbd>E</kbd><kbd>Q</kbd></span><span>вверх и вниз</span>
+    <span><kbd>Shift</kbd></span><span>быстрее</span>
+    <span><kbd>1</kbd>…<kbd>6</kbd></span><span>перенестись в интересное место</span>
+    <span><kbd>V</kbd><kbd>G</kbd></span><span>снять шлем, убрать приборы</span>
+    <span><kbd>M</kbd><kbd>H</kbd><kbd>Esc</kbd></span><span>звук, счётчик кадров, меню</span>
+  </div>
+  <div id="qual"><span>Детализация</span><div id="seg"><button data-q="low">низкая</button><button data-q="medium">средняя</button><button data-q="high">высокая</button></div></div>
+</div>
+<div id="visor">
+  <div id="v-top"><span id="v-head">С 000°</span></div>
+  <div id="v-left"><small>глубина</small><b><span id="v-depth">0.0</span> м</b></div>
+  <div id="v-right"><small>воздух</small><b><span id="v-air">98</span> %</b><small>вода</small><b class="t"><span id="v-temp">8</span> °C</b></div>
+</div>
+<button id="burger">≡</button>
+<div id="hud"></div>
+<script>(()=>{var je=s=>(+s).toFixed(4),eo=s=>`
+const SURF: f32 = ${je(s.SURF)};
+const SHRES: f32 = ${je(s.SHRES)};
+const GROT = vec3f(${je(s.grotto[0])}, ${je(s.grotto[1])}, ${je(s.grotto[2])});
+const STRAD: f32 = 0.34;
+
+// ---- the palette ----
+const WCOL = vec3f(0.020, 0.25, 0.36);    // water looking up
+const DCOL = vec3f(0.003, 0.034, 0.085);  // water looking down / far
+const PCOL = vec3f(0.17, 0.10, 0.36);     // grotto water looking up
+const PDCOL = vec3f(0.030, 0.012, 0.085); // grotto water looking down
+const SUNC = vec3f(2.7, 2.4, 2.2);
+const LAVAC = vec3f(1.0, 0.30, 0.05);     // light thrown by the lava        // sunlight just under the surface
+const SUNABS = vec3f(0.050, 0.0145, 0.0145);// how fast sunlight loses each colour with depth
+const FOGABS = vec3f(0.036, 0.016, 0.0125);
+const FOGDEN: f32 = 0.0155;
+
+struct Globals {
+  viewProj: mat4x4f,
+  invViewProj: mat4x4f,
+  lightVP: mat4x4f,
+  shipInv: mat4x4f,
+  cam: vec4f,   // xyz, time
+  sun: vec4f,   // direction to the sun, exposure
+  res: vec4f,   // scene w, h, 1/w, 1/h
+  misc: vec4f,  // grotto mask at camera, depth dimming, ray strength, pixels per metre at distance 1
+  cres: vec4f,  // canvas w, h, 1/w, 1/h
+  fx: vec4f,    // bloom strength, unused...
+  visor: vec4f, // helmet lag x, y, roll, visor on (0..1)
+  vis2: vec4f,  // breath fog, heat at the diver
+  vel: vec4f,   // diver velocity, speed
+  lava: array<vec4f, 16>,   // hot spots: xyz, radius
+};
+@group(0) @binding(0) var<uniform> G: Globals;
+@group(0) @binding(1) var shadowTex: texture_depth_2d;
+@group(0) @binding(2) var shadowSmp: sampler_comparison;
+@group(0) @binding(3) var noiseTex: texture_3d<f32>;
+@group(0) @binding(4) var repSmp: sampler;
+@group(0) @binding(5) var causTex: texture_2d<f32>;
+@group(0) @binding(6) var crackTex: texture_2d<f32>;
+
+fn grotto(p: vec3f) -> f32 { return 1.0 - smoothstep(0.5, 1.0, length(p.xz - GROT.xy) / GROT.z); }
+
+fn waterColor(dir: vec3f, m: f32) -> vec3f {
+  let k = smoothstep(-0.55, 0.85, dir.y);
+  var c = mix(mix(DCOL, PDCOL, m), mix(WCOL, PCOL, m), k);
+  let s = max(dot(dir, G.sun.xyz), 0.0);
+  c += mix(vec3f(0.10, 0.45, 0.42), vec3f(0.34, 0.26, 0.55), m) * (pow(s, 5.0) * 0.5 + pow(s, 48.0) * 0.5);
+  return c * G.misc.y;
+}
+fn fogT(d: f32) -> vec3f { return exp(-d * FOGABS); }
+fn applyFog(col: vec3f, P: vec3f) -> vec3f {
+  let v = P - G.cam.xyz; let d = length(v);
+  let m = 0.5 * (G.misc.x + grotto(P));
+  return col * fogT(d) + waterColor(v / max(d, 0.001), m) * (1.0 - exp(-d * FOGDEN));
+}
+
+fn shadowAt(P: vec3f) -> f32 {
+  let q = G.lightVP * vec4f(P, 1.0);
+  let uv = q.xy * vec2f(0.5, -0.5) + 0.5;
+  let z = q.z - 0.0006;
+  // wide 3x3 kernel: light under water is diffuse, so shadows are soft and never quite black
+  let o = 2.3 / SHRES;
+  var s = 0.0;
+  for (var y = -1; y <= 1; y++) { for (var x = -1; x <= 1; x++) {
+    s += textureSampleCompareLevel(shadowTex, shadowSmp, uv + vec2f(f32(x), f32(y)) * o, z);
+  } }
+  return 0.1 + 0.1 * s;
+}
+fn sunAt(y: f32) -> vec3f { return SUNC * exp(-max(SURF - y, 0.0) * SUNABS); }
+fn ambAt(N: vec3f, P: vec3f, m: f32) -> vec3f {
+  let up = mix(vec3f(0.022, 0.13, 0.20), vec3f(0.20, 0.125, 0.40), m);
+  let dn = mix(vec3f(0.007, 0.032, 0.045), vec3f(0.05, 0.02, 0.09), m);
+  // sky dome + a soft side fill from the open water opposite the sun, so shaded rock keeps its shape
+  let F = normalize(vec3f(-G.sun.x, 0.25, -G.sun.z));
+  let a = mix(dn, up, smoothstep(-1.0, 1.0, N.y)) + up * (0.45 * max(dot(N, F), 0.0));
+  return a * exp(-max(SURF - P.y, 0.0) * 0.015);
+}
+fn causticAt(P: vec3f) -> f32 {
+  let L = G.sun.xyz;
+  let q = P.xz + L.xz * ((SURF - P.y) / L.y);
+  return 0.38 + 1.25 * textureSample(causTex, repSmp, q / 11.0).r;
+}
+// Shared lighting: sun (shadowed, with caustics) + sky ambient + optional light coming through thin things.
+// How volcanically active the ground is at p (<= 0 away from every hot spot).
+fn lavaHeat(p: vec3f) -> f32 {
+  var h = 0.0;
+  for (var i = 0; i < 16; i++) {
+    let s = G.lava[i]; let d = distance(p.xz, s.xz) / s.w;
+    h = max(h, (1.0 - d * d) * smoothstep(16.0, 5.0, p.y - s.y));
+  }
+  return h;
+}
+// Glow of the lava fields on whatever is near them (unshadowed point lights from below).
+fn lavaLight(P: vec3f, N: vec3f) -> vec3f {
+  var a = 0.0;
+  for (var i = 0; i < 16; i++) {
+    let s = G.lava[i]; let v = s.xyz - P; let r2 = s.w * s.w; let d2 = dot(v, v);
+    a += r2 / (d2 + r2 * 0.5) * smoothstep(r2 * 7.0, r2 * 0.8, d2) * max(dot(N, v) * inverseSqrt(d2 + 0.01) * 0.7 + 0.3, 0.0);
+  }
+  return LAVAC * (a * 0.36);
+}
+fn shade(P: vec3f, N: vec3f, alb: vec3f, ao: f32, tr: vec3f) -> vec3f {
+  let L = G.sun.xyz; let ndl = dot(N, L);
+  let sh = shadowAt(P + N * (0.2 * sign(ndl)) + L * 0.08);
+  let sun = sunAt(P.y) * (sh * causticAt(P));
+  return alb * (sun * max(ndl, 0.0) + ambAt(N, P, grotto(P)) * ao + lavaLight(P, N)) + tr * sun * max(-ndl, 0.0);
+}
+
+fn kelpSway(base: vec3f, s: f32, seed: f32) -> vec3f {
+  let t = G.cam.w;
+  let k = s / 40.0;
+  let a = k * k * 10.0 + k * 1.6;
+  let ph = seed * 6.283 + base.x * 0.045 + base.z * 0.037;
+  let sw = vec2f(sin(t * 0.33 + ph * 0.3 - s * 0.06) + 0.45 * sin(t * 0.71 + ph + s * 0.13),
+                 cos(t * 0.27 + ph * 0.5 - s * 0.05) + 0.45 * sin(t * 0.63 + ph * 1.7 + s * 0.11));
+  let me = vec2f(sin(s * 0.19 + ph * 3.0), cos(s * 0.15 + ph * 2.0)) * (0.25 + k * 1.6) * smoothstep(0.0, 4.0, s);
+  return vec3f(sw.x * a * 0.4 + me.x, 0.0, sw.y * a * 0.4 + me.y);
+}
+fn qrot(q: vec4f, v: vec3f) -> vec3f { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+fn ign(p: vec2f) -> f32 { return fract(52.9829189 * fract(dot(p, vec2f(0.06711056, 0.00583715)))); }
+
+struct BB { clip: vec4f, k: f32 };
+fn bill(p: vec3f, c: vec2f, size: f32, minPx: f32) -> BB {
+  let cp = G.viewProj * vec4f(p, 1.0);
+  let px = size * G.misc.w / max(cp.w, 0.05);
+  let pxc = max(px, minPx);
+  var o: BB;
+  o.clip = vec4f(cp.xy + c * pxc * 2.0 * G.res.zw * cp.w, cp.zw);
+  o.k = (px / pxc) * (px / pxc);
+  return o;
+}
+fn corner(vi: u32) -> vec2f {
+  var c = array<vec2f, 6>(vec2f(-1, -1), vec2f(1, -1), vec2f(1, 1), vec2f(-1, -1), vec2f(1, 1), vec2f(-1, 1));
+  return c[vi];
+}
+`,oo=`
+struct FIn {
+  @builtin(position) clip: vec4f,
+  @location(0) wpos: vec3f,
+  @location(1) nrm: vec3f,
+  @location(2) col: vec4f,
+  @location(3) ao: f32,
+  @location(4) tpos: vec3f,
+};
+
+// ---------- static geometry: seabed, cliffs, ship, whale ----------
+@vertex fn vsStatic(@location(0) pos: vec3f, @location(1) na: vec4f, @location(2) col: vec4f) -> FIn {
+  var o: FIn;
+  o.clip = G.viewProj * vec4f(pos, 1.0);
+  o.wpos = pos; o.tpos = pos; o.nrm = na.xyz; o.ao = na.w; o.col = col;
+  return o;
+}
+
+@fragment fn fsStatic(i: FIn) -> @location(0) vec4f {
+  let P = i.wpos; let Ng = normalize(i.nrm);
+  let mat = i.col.r * 255.0;
+  let isWood = step(0.5, mat) * step(mat, 1.5);
+  let isStone = step(1.5, mat);
+  let lp = (G.shipInv * vec4f(P, 1.0)).xyz;
+  let ln = (G.shipInv * vec4f(Ng, 0.0)).xyz;
+  let n1 = textureSample(noiseTex, repSmp, P * 0.021);
+  let n2 = textureSample(noiseTex, repSmp, P * 0.129 + 0.37);
+  let n3 = textureSample(noiseTex, repSmp, mix(P * 0.67, lp * vec3f(0.09, 1.1, 1.1), isWood) + 0.11);
+  let n4 = textureSample(noiseTex, repSmp, P * 2.7);
+  var g = (n1.xyz - 0.5) * 1.2 + (n2.xyz - 0.5) * 1.7 + (n3.xyz - 0.5) * 1.1 + (n4.xyz - 0.5) * 0.5;
+  let pm = grotto(P);
+
+  // volcanic seabed: cracked basalt plates, lava in the cracks around the hot spots
+  let heat0 = lavaHeat(P);
+  let heat = clamp(max(heat0 * (0.7 + 1.1 * n1.a), smoothstep(0.64, 0.78, n1.a) * 0.4), 0.0, 1.0) * (1.0 - pm * 0.6);
+  let wuv = P.xz + (n2.xy - 0.5) * 0.9;
+  let k1 = textureSample(crackTex, repSmp, wuv / 20.0);
+  let k2 = textureSample(crackTex, repSmp, wuv / 5.3 + 0.31);
+  let plate = smoothstep(0.40, 0.72, Ng.y);                   // plates on the floor, veins in the walls
+  let wl = mix(0.05, 0.36, heat * heat * heat);               // how wide the molten part of a crack is
+  let lava1 = max(1.0 - smoothstep(wl * 0.3, wl, k1.r), k1.a) * smoothstep(0.10, 0.30, heat);
+  let lava2 = k2.a * smoothstep(0.40, 0.8, heat) * 0.6;
+  let vein = (1.0 - smoothstep(0.0, 0.035, abs(n2.a - 0.5))) * smoothstep(0.25, 0.7, heat);
+  let crust = 0.3 + 0.7 * smoothstep(0.64, 0.40, n3.a * 0.6 + n4.a * 0.4);     // cooled skin floating on the melt
+  let molten = clamp(mix(vein, max(lava1, lava2), plate), 0.0, 1.0) * crust * (1.0 - isWood) * (1.0 - isStone);
+  var bas = mix(vec3f(0.016, 0.018, 0.022), vec3f(0.095, 0.09, 0.085), smoothstep(0.2, 0.8, n3.a * 0.6 + n2.a * 0.4)) * (0.7 + 0.6 * n4.a);
+  let crk = mix(1.0, (1.0 - 0.8 * k1.a) * (1.0 - 0.5 * k2.a), plate);
+  bas *= crk;
+  bas = mix(bas, vec3f(0.02, 0.065, 0.04), smoothstep(0.5, 0.7, n1.a * 0.6 + n3.a * 0.4) * (1.0 - heat) * 0.6 * (1.0 - pm));   // algae on cold rock
+  bas = mix(bas, vec3f(0.14, 0.04, 0.14), pm * smoothstep(0.4, 0.62, n2.a) * 0.85);
+  var alb = mix(bas, vec3f(0.0), molten);
+  // plates dome up and fall away into the cracks
+  g -= vec3f(k1.g - 0.5, 0.0, k1.b - 0.5) * ((1.0 - smoothstep(0.0, 0.30, k1.r)) * 3.0 * plate);
+  g -= vec3f(k2.g - 0.5, 0.0, k2.b - 0.5) * ((1.0 - smoothstep(0.0, 0.25, k2.r)) * 1.2 * plate);
+  var bump = mix(2.2, 1.3, plate);
+  var ao = i.ao * mix(smoothstep(0.15, 0.7, n2.a) * 1.25, 0.5 + 0.5 * crk, plate);
+
+  // ship timber
+  let deckish = step(0.75, abs(ln.y));
+  let pv = mix(lp.y / 0.44, lp.z / 0.36, deckish);
+  let seam = smoothstep(0.5, 0.40, abs(fract(pv) - 0.5));
+  let plankTint = 0.75 + 0.5 * fract(sin(floor(pv) * 12.9898) * 43758.5453);
+  var wood = mix(vec3f(0.15, 0.10, 0.065), vec3f(0.36, 0.26, 0.16), n3.a) * plankTint * (0.35 + 0.65 * seam);
+  wood = mix(wood, vec3f(0.08, 0.22, 0.14), smoothstep(0.45, 0.75, n2.a * 0.7 + Ng.y * 0.35) * 0.8);
+  alb = mix(alb, wood, isWood);
+  bump = mix(bump, 0.9, isWood);
+  ao = mix(ao, i.ao * (0.6 + 0.4 * seam), isWood);
+
+  // whale: pale weathered stone
+  var stone = mix(vec3f(0.26, 0.29, 0.31), vec3f(0.50, 0.52, 0.51), n2.a * 0.6 + n3.a * 0.4);
+  stone *= 0.8 + 0.4 * smoothstep(0.35, 0.65, n1.a);
+  stone = mix(stone, vec3f(0.06, 0.17, 0.10), smoothstep(0.5, 0.8, n2.a * 0.6 + Ng.y * 0.5) * 0.7);
+  alb = mix(alb, stone, isStone);
+  bump = mix(bump, 0.7, isStone);
+  ao = mix(ao, i.ao * (0.6 + 0.8 * n2.a), isStone);
+
+  let N = normalize(Ng - (g - Ng * dot(g, Ng)) * bump);
+  var c = shade(P, N, alb, ao, vec3f(0.0));
+  let flick = 0.6 + 0.8 * textureSample(noiseTex, repSmp, P * 0.31 + vec3f(0.0, G.cam.w * 0.035, 0.0)).a;
+  c += (vec3f(0.9, 0.09, 0.008) * molten * 1.2 + vec3f(1.0, 0.34, 0.04) * pow(molten, 3.0) * 2.1 + vec3f(1.0, 0.72, 0.28) * pow(molten, 9.0) * 1.3) * flick;
+  return vec4f(applyFog(c, P), 1.0);
+}
+
+// ---------- instanced props: rocks, corals, sponges ----------
+@vertex fn vsProp(@location(0) pos: vec3f, @location(1) na: vec4f, @location(2) col: vec4f,
+                  @location(3) ps: vec4f, @location(4) q: vec4f, @location(5) tint: vec4f) -> FIn {
+  var o: FIn;
+  let lp = qrot(q, pos * ps.w);
+  var p = lp + ps.xyz;
+  o.tpos = p + ps.xyz * 0.37;
+  p.y += sin(G.cam.w * 0.21 + ps.x * 0.7 + ps.z * 0.3) * 0.7 * step(0.75, tint.a);       // floating boulders bob
+  o.clip = G.viewProj * vec4f(p, 1.0);
+  o.wpos = p; o.nrm = qrot(q, na.xyz); o.ao = na.w;
+  o.col = vec4f(col.rgb * tint.rgb, mix(col.a, 2.0, step(0.25, tint.a) * step(tint.a, 0.75)));     // alpha 2 marks carved stone
+  return o;
+}
+
+@fragment fn fsProp(i: FIn) -> @location(0) vec4f {
+  let P = i.wpos; let Ng = normalize(i.nrm);
+  let isRuin = step(1.5, i.col.a);
+  let org = i.col.a * (1.0 - isRuin);     // 0 = rock, >0 = living thing (glows a little)
+  let isRock = step(org, 0.01);
+  let n2 = textureSample(noiseTex, repSmp, i.tpos * 0.19);
+  let n3 = textureSample(noiseTex, repSmp, i.tpos * 0.83);
+  let g = ((n2.xyz - 0.5) * 1.3 + (n3.xyz - 0.5) * 1.1) * mix(0.9, 1.5, isRock);
+  let N = normalize(Ng - (g - Ng * dot(g, Ng)));
+  var rock = mix(vec3f(0.018, 0.02, 0.024), vec3f(0.12, 0.11, 0.10), smoothstep(0.25, 0.75, n2.a * 0.6 + n3.a * 0.4)) * i.col.rgb * 2.0;
+  let pm = grotto(P);
+  rock = mix(rock, vec3f(0.03, 0.09, 0.05), smoothstep(0.45, 0.7, n2.a * 0.6 + Ng.y * 0.4) * 0.7 * (1.0 - pm));
+  rock = mix(rock, vec3f(0.26, 0.07, 0.25), pm * smoothstep(0.42, 0.62, n2.a) * 0.8);
+  // carved stone of the drowned city: pale, streaked, mossy on top, sooty where the lava is close
+  var ruin = mix(vec3f(0.24, 0.225, 0.185), vec3f(0.47, 0.44, 0.37), smoothstep(0.25, 0.75, n2.a * 0.55 + n3.a * 0.45)) * i.col.rgb;
+  ruin *= 0.7 + 0.3 * smoothstep(0.3, 0.6, textureSample(noiseTex, repSmp, i.tpos * vec3f(0.6, 0.07, 0.6)).a);
+  ruin = mix(ruin, vec3f(0.05, 0.11, 0.07), smoothstep(0.56, 0.82, n2.a * 0.55 + Ng.y * 0.45) * 0.4);
+  ruin = mix(ruin, vec3f(0.03, 0.025, 0.02), clamp(lavaHeat(P), 0.0, 1.0) * 0.55);
+  rock = mix(rock, ruin, isRuin);
+  let alb = mix(i.col.rgb * (0.25 + 0.75 * smoothstep(0.25, 0.7, n3.a)) * 0.8, rock, isRock);
+  let ao = i.ao * mix(1.0, smoothstep(0.15, 0.7, n2.a) * 1.25, isRock);
+  var c = shade(P, N, alb, ao, alb * org * 0.4);
+  c += alb * org * (0.30 + 0.30 * pm) * exp(-max(SURF - P.y, 0.0) * 0.012);
+  return vec4f(applyFog(c, P), 1.0);
+}
+
+// ---------- ground cover ----------
+@vertex fn vsGrass(@location(0) pos: vec3f, @location(1) na: vec4f, @location(2) col: vec4f,
+                   @location(3) ps: vec4f, @location(4) ic: vec4f) -> FIn {
+  var o: FIn;
+  let t = G.cam.w;
+  let yaw = ic.a * 6.2831853; let c = cos(yaw); let s = sin(yaw);
+  var lp = vec3f(c * pos.x + s * pos.z, pos.y, -s * pos.x + c * pos.z) * ps.w;
+  let h = col.r;
+  let ph = ps.x * 0.31 + ps.z * 0.27;
+  lp += vec3f(sin(t * 1.1 + ph) + 0.4 * sin(t * 2.3 + ph * 2.1), 0.0, cos(t * 0.9 + ph * 1.3)) * (h * h * 0.13 * ps.w);
+  let p = lp + ps.xyz;
+  o.clip = G.viewProj * vec4f(p, 1.0);
+  o.wpos = p; o.tpos = vec3f(h, col.g, col.b);
+  let n = vec3f(c * na.x + s * na.z, na.y, -s * na.x + c * na.z);
+  o.nrm = n; o.ao = na.w;
+  o.col = vec4f(ic.rgb, 1.0);
+  return o;
+}
+
+@fragment fn fsGrass(i: FIn, @builtin(front_facing) ff: bool) -> @location(0) vec4f {
+  var N = normalize(i.nrm); if (!ff) { N = -N; }
+  N = normalize(N + vec3f(0.0, 1.3, 0.0));
+  let h = i.tpos.x;
+  let var_ = 0.7 + 0.6 * i.tpos.y;
+  let alb = i.col.rgb * var_ * (0.18 + 0.62 * h) * (1.0 - 0.25 * smoothstep(0.35, 0.0, abs(i.tpos.z - 0.5)));
+  var c = shade(i.wpos, N, alb, i.ao, alb * 0.8);
+  let glow = max(max(i.col.r, i.col.b) - i.col.g, 0.0);    // magenta/violet covers fluoresce, green ones don't
+  c += alb * glow * (0.15 + 0.7 * h * h) * (1.0 + grotto(i.wpos)) * exp(-max(SURF - i.wpos.y, 0.0) * 0.01);
+  return vec4f(applyFog(c, i.wpos), 1.0);
+}
+
+// ---------- kelp ----------
+struct KOut {
+  @builtin(position) clip: vec4f,
+  @location(0) wpos: vec3f,
+  @location(1) nrm: vec3f,
+  @location(2) uvh: vec3f,
+  @location(3) par: vec2f,
+};
+
+@vertex fn vsLeaf(@location(0) uv: vec2f, @location(1) a: vec4f, @location(2) b: vec4f, @location(3) c: vec4f) -> KOut {
+  let t = G.cam.w; let seed = a.w; let s = b.x; let len = b.z;
+  let u = uv.x;
+  let sw = kelpSway(a.xyz, s, seed);
+  let stA = c.w * 6.2831853 + s * 0.35;
+  let attach = a.xyz + vec3f(0.0, s, 0.0) + sw + vec3f(cos(stA), 0.0, sin(stA)) * (STRAD * smoothstep(0.0, 3.0, s));
+  let fl = sin(t * 0.8 + seed * 40.0 + s * 0.7 + b.y * 3.0);
+  let fl2 = sin(t * 1.7 + b.y * 11.0 + s * 1.3);
+  let th = b.y + fl * 0.10;
+  let dOut = vec3f(cos(th), 0.0, sin(th)); let side = vec3f(-dOut.z, 0.0, dOut.x);
+  let phi0 = 0.85 + 0.12 * fl + (c.z - 0.5) * 0.7;
+  let k = 1.7 + 1.1 * c.x + 0.25 * fl2;
+  let phi = phi0 - k * u;
+  let ctr = len * (dOut * ((sin(phi0) - sin(phi)) / k) + vec3f(0.0, 1.0, 0.0) * ((cos(phi) - cos(phi0)) / k));
+  let T = dOut * cos(phi) + vec3f(0.0, sin(phi), 0.0);
+  let Nn = -dOut * sin(phi) + vec3f(0.0, cos(phi), 0.0);
+  let tw = (c.z - 0.5) * 2.4 + u * 2.2 * (c.x - 0.5) + fl2 * 0.35 * u;
+  let sd = side * cos(tw) + Nn * sin(tw);
+  let nn = Nn * cos(tw) - side * sin(tw);
+  let dist = distance(a.xz, G.cam.xz);
+  let widen = 1.0 + smoothstep(45.0, 140.0, dist) * 0.9;
+  let shape = max(pow(sin(3.14159 * pow(u, 0.6)), 0.75), 0.07) * (1.0 - smoothstep(0.9, 1.0, u));
+  let wd = len * 0.085 * shape * widen;
+  let ruf = sin(u * 19.0 + seed * 50.0 + b.y * 9.0) * 0.05 * len * 0.5;
+  let p = attach + ctr + sd * (uv.y * wd) + nn * (ruf * uv.y);
+  var o: KOut;
+  o.clip = G.viewProj * vec4f(p, 1.0);
+  o.wpos = p;
+  o.nrm = normalize(nn + sd * (uv.y * 0.35) + T * (ruf * 3.0 * uv.y));
+  o.uvh = vec3f(u, uv.y, c.x);
+  o.par = vec2f(c.y, 0.5 + 0.5 * u);
+  return o;
+}
+
+@fragment fn fsLeaf(i: KOut, @builtin(front_facing) ff: bool) -> @location(0) vec4f {
+  var N = normalize(i.nrm); if (!ff) { N = -N; }
+  let u = i.uvh.x; let hue = i.uvh.z;
+  var base = mix(vec3f(0.026, 0.042, 0.016), vec3f(0.21, 0.165, 0.030), hue * (0.3 + 0.7 * u));
+  let pur = mix(vec3f(0.15, 0.045, 0.32), vec3f(0.36, 0.27, 0.05), smoothstep(0.66, 0.82, hue));
+  base = mix(base, pur, i.par.x);
+  base *= 1.0 - 0.45 * smoothstep(0.28, 0.0, abs(i.uvh.y));
+  base *= 0.6 + 0.8 * textureSample(noiseTex, repSmp, i.wpos * 0.61).a;
+  var c = shade(i.wpos, N, base, i.par.y, base * vec3f(2.2, 1.55, 0.5));
+  c += base * i.par.x * 0.35 * exp(-max(SURF - i.wpos.y, 0.0) * 0.012);
+  return vec4f(applyFog(c, i.wpos), 1.0);
+}
+
+@vertex fn vsStipe(@location(0) m: vec2f, @location(1) a: vec4f, @location(2) b: vec4f) -> KOut {
+  let s = m.x * b.x;
+  let sw = kelpSway(a.xyz, s, a.w);
+  let stA = b.y * 6.2831853 + s * 0.35;
+  let ctr = a.xyz + vec3f(0.0, s, 0.0) + sw + vec3f(cos(stA), 0.0, sin(stA)) * (STRAD * smoothstep(0.0, 3.0, s));
+  let n = vec3f(cos(m.y), 0.0, sin(m.y));
+  let dist = distance(a.xz, G.cam.xz);
+  let p = ctr + n * (b.z * (1.0 - 0.55 * m.x) * (1.0 + smoothstep(30.0, 120.0, dist) * 1.5));
+  var o: KOut;
+  o.clip = G.viewProj * vec4f(p, 1.0);
+  o.wpos = p; o.nrm = n; o.uvh = vec3f(m.x, 0.0, 0.0); o.par = vec2f(b.w, 0.6);
+  return o;
+}
+@fragment fn fsStipe(i: KOut) -> @location(0) vec4f {
+  let base = mix(vec3f(0.07, 0.07, 0.02), vec3f(0.14, 0.05, 0.20), i.par.x);
+  let c = shade(i.wpos, normalize(i.nrm), base, 0.7, vec3f(0.0));
+  return vec4f(applyFog(c, i.wpos), 1.0);
+}
+
+// ---------- animals ----------
+fn fishPos(a: vec4f, b: vec4f, t: f32) -> vec3f {
+  let c = a.xyz + vec3f(sin(t * 0.05 + a.w * 9.0) * 9.0, sin(t * 0.04 + a.w * 5.0) * 2.5, cos(t * 0.045 + a.w * 7.0) * 9.0);
+  let ang = b.w + t * b.z;
+  let r = b.x * (1.0 + 0.22 * sin(ang * 3.0 + b.y * 4.0));
+  return c + vec3f(cos(ang) * r, b.y + sin(ang * 2.0 + b.w * 3.0) * 0.5, sin(ang) * r * 0.75);
+}
+@vertex fn vsFish(@location(0) pos: vec3f, @location(1) na: vec4f, @location(2) col: vec4f,
+                  @location(3) a: vec4f, @location(4) b: vec4f, @location(5) ic: vec4f) -> FIn {
+  let t = G.cam.w;
+  let p0 = fishPos(a, b, t);
+  let fw = normalize(fishPos(a, b, t + 0.08) - p0);
+  let rt = normalize(cross(vec3f(0.0, 1.0, 0.0), fw));
+  let up = cross(fw, rt);
+  let sc = 0.28 + ic.a * 0.3;
+  var lp = pos;
+  lp.x += sin(t * 11.0 + b.w * 17.0 - pos.z * 5.0) * 0.09 * col.r;
+  let p = p0 + (rt * lp.x + up * lp.y + fw * lp.z) * sc;
+  var o: FIn;
+  o.clip = G.viewProj * vec4f(p, 1.0);
+  o.wpos = p; o.tpos = pos; o.nrm = rt * na.x + up * na.y + fw * na.z; o.ao = 1.0;
+  o.col = vec4f(ic.rgb, col.g);
+  return o;
+}
+@fragment fn fsFish(i: FIn, @builtin(front_facing) ff: bool) -> @location(0) vec4f {
+  var N = normalize(i.nrm); if (!ff) { N = -N; }
+  let V = normalize(G.cam.xyz - i.wpos);
+  let belly = smoothstep(0.05, -0.1, i.tpos.y);
+  let alb = mix(i.col.rgb * 0.45, vec3f(0.5, 0.55, 0.57), belly);
+  var c = shade(i.wpos, N, alb, 1.0, vec3f(0.0));
+  let H = normalize(V + G.sun.xyz);
+  c += sunAt(i.wpos.y) * pow(max(dot(N, H), 0.0), 24.0) * 0.25;       // scales flash in the sun
+  return vec4f(applyFog(c, i.wpos), 1.0);
+}
+
+fn mantaPos(a: vec4f, b: vec4f, t: f32) -> vec3f {
+  let ang = b.y + t * b.x;
+  return a.xyz + vec3f(cos(ang) * a.w, sin(ang * 2.0 + b.y) * 2.2, sin(ang) * a.w * 0.8);
+}
+@vertex fn vsManta(@location(0) pos: vec3f, @location(1) na: vec4f, @location(2) col: vec4f,
+                   @location(3) a: vec4f, @location(4) b: vec4f) -> FIn {
+  let t = G.cam.w;
+  let p0 = mantaPos(a, b, t);
+  let fw = normalize(mantaPos(a, b, t + 0.2) - p0);
+  var rt = normalize(cross(vec3f(0.0, 1.0, 0.0), fw));
+  rt = normalize(rt + vec3f(0.0, 0.22 * sign(b.x), 0.0));    // bank into the turn
+  let up = cross(fw, rt);
+  var lp = pos;
+  let sp = col.r;
+  let w = sin(t * 1.5 + b.y * 5.0 - sp * 1.6 + pos.z * 0.15);
+  let wd = cos(t * 1.5 + b.y * 5.0 - sp * 1.6 + pos.z * 0.15);
+  lp.y += w * pow(sp, 1.5) * 1.15 * (1.0 - col.b);
+  lp.x *= 1.0 - 0.10 * w * w * sp;
+  lp.x += sin(t * 1.1 + pos.z * 0.8) * 0.12 * col.b * (-pos.z - 1.3);     // tail trails
+  let sc = b.z;
+  let p = p0 + (rt * lp.x + up * lp.y + fw * lp.z) * sc;
+  var n = na.xyz;
+  n = normalize(n - vec3f(sign(pos.x) * wd * pow(sp, 0.5) * 0.9, 0.0, 0.0) * (1.0 - col.b));
+  var o: FIn;
+  o.clip = G.viewProj * vec4f(p, 1.0);
+  o.wpos = p; o.tpos = pos; o.nrm = rt * n.x + up * n.y + fw * n.z; o.ao = na.w;
+  o.col = col;
+  return o;
+}
+@fragment fn fsManta(i: FIn) -> @location(0) vec4f {
+  let N = normalize(i.nrm);
+  let n = textureSample(noiseTex, repSmp, i.tpos * 0.11);
+  let top = mix(vec3f(0.035, 0.045, 0.065), vec3f(0.10, 0.12, 0.15), n.a);
+  var belly = vec3f(0.62, 0.66, 0.68) * (0.75 + 0.5 * n.a);
+  belly = mix(belly, vec3f(0.08, 0.09, 0.11), smoothstep(0.60, 0.66, n.a * 0.6 + i.col.r * 0.4));   // belly blotches
+  let alb = mix(top, belly, i.col.g);
+  let c = shade(i.wpos, N, alb, i.ao, vec3f(0.0));
+  return vec4f(applyFog(c, i.wpos), 1.0);
+}
+
+// ---------- sky, surface ----------
+struct SkyOut { @builtin(position) clip: vec4f, @location(0) ndc: vec2f };
+@vertex fn vsSky(@builtin(vertex_index) vi: u32) -> SkyOut {
+  var o: SkyOut;
+  let p = vec2f(f32((vi << 1u) & 2u), f32(vi & 2u)) * 2.0 - 1.0;
+  o.clip = vec4f(p, 1.0, 1.0); o.ndc = p;
+  return o;
+}
+@fragment fn fsSky(i: SkyOut) -> @location(0) vec4f {
+  let a = G.invViewProj * vec4f(i.ndc, 0.2, 1.0); let b = G.invViewProj * vec4f(i.ndc, 0.9, 1.0);
+  let dir = normalize(b.xyz / b.w - a.xyz / a.w);
+  return vec4f(waterColor(dir, G.misc.x), 1.0);
+}
+
+struct SurfOut { @builtin(position) clip: vec4f, @location(0) wpos: vec3f };
+@vertex fn vsSurf(@builtin(vertex_index) vi: u32) -> SurfOut {
+  var o: SurfOut;
+  let c = corner(vi) * 1500.0;
+  o.wpos = vec3f(G.cam.x + c.x, SURF, G.cam.z + c.y);
+  o.clip = G.viewProj * vec4f(o.wpos, 1.0);
+  return o;
+}
+@fragment fn fsSurf(i: SurfOut) -> @location(0) vec4f {
+  let P = i.wpos; let t = G.cam.w;
+  let vv = P - G.cam.xyz; let d = length(vv); let V = vv / d;
+  let g1 = textureSample(noiseTex, repSmp, vec3f(P.xz * 0.021 + t * vec2f(0.006, 0.004), t * 0.016)).xyz - 0.5;
+  let g2 = textureSample(noiseTex, repSmp, vec3f(P.zx * 0.083 - t * vec2f(0.011, 0.014), t * 0.037 + 0.5)).xyz - 0.5;
+  let sl = g1.xy * 0.62 + g2.xy * 0.42;
+  let N = normalize(vec3f(sl.x, -1.0, sl.y));
+  // looking up through the surface: refract into air, or reflect the deep when beyond the critical angle
+  let ci = max(dot(-V, N), 0.0);
+  let k = 1.0 - 1.33 * 1.33 * (1.0 - ci * ci);
+  let R = 1.33 * V + (1.33 * ci - sqrt(max(k, 0.0))) * N;
+  let Rn = normalize(R);
+  let sd = max(dot(Rn, G.sun.xyz), 0.0);
+  var sky = mix(vec3f(0.22, 0.66, 0.84), vec3f(0.62, 0.92, 1.0), smoothstep(0.0, 1.0, Rn.y)) * 1.15;
+  sky += vec3f(1.0, 0.95, 0.8) * (pow(sd, 60.0) * 2.5 + pow(sd, 900.0) * 40.0);
+  let refl = reflect(V, N);
+  let m = G.misc.x;
+  let rc = waterColor(vec3f(refl.x, -abs(refl.y), refl.z), m) * 1.25 + mix(WCOL, PCOL, m) * 0.10;
+  let win = smoothstep(0.0, 0.30, k);
+  var c = mix(rc, sky * mix(vec3f(1.0), vec3f(0.9, 0.75, 1.1), m), win);
+  c = c * fogT(d * 0.55) + waterColor(V, m) * (1.0 - exp(-d * FOGDEN * 0.8));
+  return vec4f(c, 1.0);
+}
+
+// ---------- particles ----------
+struct POut { @builtin(position) clip: vec4f, @location(0) uv: vec2f, @location(1) col: vec4f, @location(2) seed: f32 };
+
+@vertex fn vsSpark(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b: vec4f) -> POut {
+  let t = G.cam.w; let c = corner(vi);
+  let sw = kelpSway(a.xyz, b.x, a.w);
+  let ang = b.z + t * 0.2 * (fract(b.z * 7.0) - 0.5);
+  let p = a.xyz + vec3f(0.0, b.x + sin(t * 0.37 + b.z * 5.0) * 0.35, 0.0) + sw + vec3f(cos(ang), 0.0, sin(ang)) * b.y;
+  let tw = pow(0.5 + 0.5 * sin(t * (1.2 + fract(b.z * 3.3) * 2.6) + b.z * 40.0), 5.0);
+  let bb = bill(p, c, 0.028 + 0.03 * fract(b.z * 13.0), 1.15);
+  var o: POut;
+  o.clip = bb.clip; o.uv = c;
+  let d = distance(p, G.cam.xyz);
+  let colr = mix(vec3f(1.0, 0.78, 0.25), vec3f(0.35, 1.0, 0.45), step(0.5, b.w));
+  let colp = mix(vec3f(1.0, 0.45, 0.9), vec3f(0.5, 0.7, 1.0), step(0.5, b.w));
+  o.col = vec4f(mix(colr, colp, grotto(p)) * fogT(d) * (bb.k * (0.25 + 2.6 * tw) * 2.4 * G.misc.y), 0.0);
+  return o;
+}
+@fragment fn fsSpark(i: POut) -> @location(0) vec4f {
+  let r = length(i.uv);
+  let a = smoothstep(1.0, 0.0, r);
+  return vec4f(i.col.rgb * (a * a * 1.6 + smoothstep(0.45, 0.0, r) * 1.2), 0.0);
+}
+
+@vertex fn vsBubble(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b: vec4f) -> POut {
+  let t = G.cam.w; let c = corner(vi);
+  let maxH = SURF - a.y;
+  let y = fract(a.w + t * b.x / maxH) * maxH;
+  let wob = b.z * (0.25 + y * 0.03);
+  let p = a.xyz + vec3f(sin(y * 1.3 + a.w * 40.0) * wob, y, cos(y * 1.1 + a.w * 31.0) * wob);
+  let bb = bill(p, c, b.y * (0.5 + 0.6 * y / maxH), 1.2);
+  var o: POut;
+  o.clip = bb.clip; o.uv = c;
+  let d = distance(p, G.cam.xyz);
+  let fade = smoothstep(0.0, 1.5, y) * smoothstep(maxH, maxH - 2.0, y) * bb.k;
+  let light = sunAt(p.y) * (0.25 + 0.75 * shadowAt(p)) + ambAt(vec3f(0.0, 1.0, 0.0), p, grotto(p)) * 2.0;
+  o.col = vec4f(light * fogT(d) * 0.55, fade);
+  return o;
+}
+@fragment fn fsBubble(i: POut) -> @location(0) vec4f {
+  let r = length(i.uv);
+  if (r > 1.0) { discard; }
+  let rim = smoothstep(0.55, 0.96, r) * smoothstep(1.0, 0.94, r);
+  let hl = smoothstep(0.32, 0.0, length(i.uv - vec2f(-0.35, -0.42)));
+  let a = (rim * 0.75 + hl * 1.4 + 0.06) * i.col.a;
+  return vec4f(i.col.rgb * a, a * 0.25);
+}
+
+// smoke and steam over the lava: big soft puffs, lit orange from below
+@vertex fn vsPlume(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b: vec4f) -> POut {
+  let t = G.cam.w; let c = corner(vi);
+  let u = fract(a.w + t * b.x / b.w);
+  let y = u * b.w;
+  let p = a.xyz + vec3f(sin(y * 0.33 + a.w * 40.0 + t * 0.21), 0.0, cos(y * 0.29 + a.w * 31.0 + t * 0.17)) * ((0.15 + y * 0.09) * b.z)
+        + vec3f(0.016 * y * y, y, 0.009 * y * y);
+  let bb = bill(p, c, b.y * (0.35 + 2.4 * u), 1.0);
+  var o: POut;
+  o.clip = bb.clip; o.uv = c;
+  let d = distance(p, G.cam.xyz);
+  let smoke = ambAt(vec3f(0.0, 1.0, 0.0), p, grotto(p)) * 1.1 + sunAt(p.y) * (shadowAt(p) * 0.10);
+  let col = applyFog(smoke * 0.7 + LAVAC * (exp(-y * 0.5) * 1.5), p);
+  o.col = vec4f(col, smoothstep(0.0, 0.05, u) * (1.0 - u) * (1.0 - u) * 0.17 * smoothstep(0.6, 3.0, d));
+  o.seed = a.w;
+  return o;
+}
+@fragment fn fsPlume(i: POut) -> @location(0) vec4f {
+  let r = length(i.uv);
+  let n = textureSample(noiseTex, repSmp, vec3f(i.uv * 0.27 + i.seed * 7.0, i.seed * 3.0 + G.cam.w * 0.015)).a;
+  let k = smoothstep(1.0, 0.1, r) * smoothstep(0.36, 0.6, n + (1.0 - r) * 0.22) * i.col.a;
+  return vec4f(i.col.rgb * k, k);
+}
+// embers drifting up from the cracks
+@vertex fn vsEmber(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b: vec4f) -> POut {
+  let t = G.cam.w; let c = corner(vi);
+  let u = fract(b.w + t * b.x / b.z);
+  let y = u * b.z;
+  let ang = a.w * 44.0; let r0 = b.y * fract(a.w * 13.7);
+  let p = a.xyz + vec3f(cos(ang) * r0, y, sin(ang) * r0)
+        + vec3f(sin(t * 0.9 + a.w * 50.0 + y), 0.0, cos(t * 0.7 + a.w * 37.0 + y * 1.3)) * (0.1 + 0.13 * y);
+  let bb = bill(p, c, 0.018 + 0.022 * fract(a.w * 5.3), 1.1);
+  var o: POut;
+  o.clip = bb.clip; o.uv = c;
+  let life = (1.0 - u) * (1.0 - u) * smoothstep(0.0, 0.03, u);
+  let glow = life * (0.6 + 0.4 * sin(t * 9.0 + a.w * 90.0));
+  o.col = vec4f(mix(vec3f(1.0, 0.22, 0.03), vec3f(1.0, 0.7, 0.25), life * life) * fogT(distance(p, G.cam.xyz)) * (bb.k * glow * 6.0), 0.0);
+  return o;
+}
+
+// the diver's own exhaled bubbles (simulated on the CPU, they have to follow the helmet)
+@vertex fn vsBreath(@builtin(vertex_index) vi: u32, @location(0) a: vec4f, @location(1) b: vec4f) -> POut {
+  let c = corner(vi);
+  let wob = vec3f(sin(G.cam.w * 9.0 + b.y * 40.0), 0.0, cos(G.cam.w * 8.0 + b.y * 31.0)) * 0.006;
+  let bb = bill(a.xyz + wob, c, a.w, 1.0);
+  var o: POut;
+  o.clip = bb.clip; o.uv = c;
+  let light = sunAt(a.y) * 0.5 + ambAt(vec3f(0.0, 1.0, 0.0), a.xyz, grotto(a.xyz)) * 2.5 + lavaLight(a.xyz, vec3f(0.0, -1.0, 0.0)) * 0.5;
+  o.col = vec4f(light * 0.7, b.x);
+  return o;
+}
+
+@vertex fn vsSnow(@builtin(vertex_index) vi: u32, @location(0) a: vec4f) -> POut {
+  let t = G.cam.w; let c = corner(vi);
+  let BOX = 46.0;
+  let w = a.xyz * BOX + vec3f(t * 0.06, -t * 0.035, t * 0.045) + 0.35 * vec3f(sin(t * 0.3 + a.w * 30.0), sin(t * 0.23 + a.w * 17.0), cos(t * 0.27 + a.w * 23.0));
+  let rel = fract((w - G.cam.xyz) / BOX + 0.5) - 0.5;
+  let p = G.cam.xyz + rel * BOX;
+  let d = length(rel) * BOX;
+  // at speed each mote smears along the way it passes the eye
+  let cp = G.viewProj * vec4f(p, 1.0);
+  let cq = G.viewProj * vec4f(p - G.vel.xyz * (0.012 + 0.04 * smoothstep(8.0, 20.0, G.vel.w)), 1.0);
+  let w1 = max(cp.w, 0.05);
+  let sv = (cq.xy / max(cq.w, 0.05) - cp.xy / w1) * G.res.xy * 0.5;
+  let sl = min(length(sv), 70.0);
+  let sd = select(vec2f(1.0, 0.0), sv / max(length(sv), 0.001), sl > 0.5);
+  let px = (0.008 + 0.014 * a.w) * G.misc.w / w1; let prad = max(px, 0.9);
+  let off = sd * (c.x * (prad + sl * 0.5)) + vec2f(-sd.y, sd.x) * (c.y * prad);
+  var bb: BB;
+  bb.clip = vec4f(cp.xy + off * 2.0 * G.res.zw * cp.w, cp.zw);
+  bb.k = (px / prad) * (px / prad) * prad / (prad + sl * 0.1);
+  var o: POut;
+  o.clip = bb.clip; o.uv = c;
+  let fade = smoothstep(0.6, 2.5, d) * smoothstep(BOX * 0.5, BOX * 0.36, d) * step(p.y, SURF - 0.2);
+  let light = sunAt(p.y) * shadowAt(p) * 0.55 + ambAt(vec3f(0.0, 1.0, 0.0), p, grotto(p)) * 0.6;
+  o.col = vec4f(light * fogT(d) * (fade * bb.k * 0.5), 0.0);
+  return o;
+}
+@fragment fn fsSnow(i: POut) -> @location(0) vec4f {
+  let a = smoothstep(1.0, 0.1, length(i.uv));
+  return vec4f(i.col.rgb * a, 0.0);
+}
+`,so=s=>`
+@group(1) @binding(0) var depthTex: ${s>1?"texture_depth_multisampled_2d":"texture_depth_2d"};
+
+struct VO { @builtin(position) clip: vec4f, @location(0) uv: vec2f };
+@vertex fn vsFull(@builtin(vertex_index) vi: u32) -> VO {
+  var o: VO;
+  let p = vec2f(f32((vi << 1u) & 2u), f32(vi & 2u));
+  o.clip = vec4f(p * 2.0 - 1.0, 0.0, 1.0); o.uv = vec2f(p.x, 1.0 - p.y);
+  return o;
+}
+
+// Light shafts: march the view ray through the sun's shadow map (half resolution).
+@fragment fn fsRays(i: VO) -> @location(0) vec4f {
+  let dims = vec2f(textureDimensions(depthTex));
+  let pix = min(vec2i(i.uv * dims), vec2i(dims) - 1);
+  let depth = textureLoad(depthTex, pix, 0);
+  let w4 = G.invViewProj * vec4f(i.uv.x * 2.0 - 1.0, 1.0 - i.uv.y * 2.0, depth, 1.0);
+  let v = w4.xyz / w4.w - G.cam.xyz;
+  let far = length(v); let dir = v / far;
+  let dist = min(far, 95.0);
+  let L = G.sun.xyz;
+  const STEPS = 32;
+  let dt = dist / f32(STEPS);
+  let jit = ign(i.clip.xy);
+  var acc = 0.0;
+  for (var s = 0; s < STEPS; s++) {
+    let tt = (f32(s) + jit) * dt;
+    let p = G.cam.xyz + dir * tt;
+    let q = G.lightVP * vec4f(p, 1.0);
+    let sh = textureSampleCompareLevel(shadowTex, shadowSmp, q.xy * vec2f(0.5, -0.5) + 0.5, q.z - 0.0004);
+    let cq = p.xz + L.xz * ((SURF - p.y) / L.y);
+    let ck = textureSampleLevel(causTex, repSmp, cq / 27.0, 0.0).g;
+    let dp = max(SURF - p.y, 0.0);
+    acc += sh * ck * exp(-dp * 0.030 - tt * 0.021) * dt * step(p.y, SURF);
+  }
+  let cs = max(dot(dir, L), 0.0);
+  let phase = 0.30 + 0.9 * pow(cs, 3.0) + 1.6 * pow(cs, 14.0);
+  // g: how much hot water over the lava this ray looks through (drives the shimmer)
+  var hz = 0.0;
+  let ixz = 1.0 / max(dot(dir.xz, dir.xz), 0.0001);
+  for (var k = 0; k < 16; k++) {
+    let sp = G.lava[k];
+    let tc = clamp(dot(sp.xz - G.cam.xz, dir.xz) * ixz, 0.0, far);
+    let pc = G.cam.xyz + dir * tc;
+    let hy = pc.y - sp.y;
+    hz = max(hz, smoothstep(1.15, 0.3, distance(pc.xz, sp.xz) / sp.w) * smoothstep(-1.5, 0.3, hy) * smoothstep(13.0, 2.0, hy) * smoothstep(70.0, 12.0, tc));
+  }
+  return vec4f(acc * phase * 0.10, hz, 0.0, 1.0);
+}
+
+@group(1) @binding(1) var sceneTex: texture_2d<f32>;
+@group(1) @binding(2) var raysTex: texture_2d<f32>;
+@group(1) @binding(3) var bloomTex: texture_2d<f32>;
+@group(1) @binding(4) var linSmp: sampler;
+
+// Edge of the visor opening in helmet space: < 0 on the glass, > 0 on the helmet body.
+fn visorField(p: vec2f, asp: f32) -> f32 {
+  var q = p;
+  q.y -= 0.26 * exp(-(p.x * p.x) / 0.14) * smoothstep(0.0, -1.0, p.y);     // the nose bridge lifts the lower edge
+  return pow(pow(abs(q.x) / (asp * 1.07), 4.0) + pow(abs(q.y) / 1.13, 4.0), 0.25) - 1.0;
+}
+fn hash22(p: vec2f) -> vec2f { return fract(sin(vec2f(dot(p, vec2f(127.1, 311.7)), dot(p, vec2f(269.5, 183.3)))) * 43758.5453); }
+
+@fragment fn fsComp(i: VO) -> @location(0) vec4f {
+  let uv = i.uv; let t = G.cam.w;
+  let asp = G.cres.x / G.cres.y;
+  let p = (uv - 0.5) * vec2f(2.0 * asp, -2.0);
+  let on = G.visor.w;
+  // helmet space: the helmet lags a little behind the head and rolls with the stroke
+  let cr = cos(G.visor.z); let sr = sin(G.visor.z);
+  var pv = p - G.visor.xy;
+  pv = vec2f(cr * pv.x - sr * pv.y, sr * pv.x + cr * pv.y);
+  let f = visorField(pv, asp);
+  let pix = vec2f(1.0 / asp, 1.0);
+
+  // heat shimmer over the lava
+  let hz = textureSampleLevel(raysTex, linSmp, uv, 0.0).g;
+  let wob = textureSampleLevel(noiseTex, repSmp, vec3f(p.x * 1.7, p.y * 1.2 - t * 0.55, t * 0.27), 0.0).xy - 0.5;
+  var suv = uv + wob * (hz * 0.024) * pix;
+
+  // beads of condensation near the lower rim bend the picture
+  let gc = pv * 8.0; let id = floor(gc); let hh = hash22(id);
+  let rad = (0.10 + 0.22 * hh.x) * step(0.5, fract(hh.y * 13.7));
+  let dd = (gc - id - 0.3 - 0.4 * hh) / max(rad, 0.001); let dl = length(dd);
+  let zone = on * smoothstep(-0.34, -0.03, f) * smoothstep(0.35, -0.6, pv.y);
+  let drop = smoothstep(1.0, 0.75, dl) * step(0.001, rad) * zone;
+  suv -= dd * (drop * 0.011) * pix;
+
+  // curved glass: the picture squeezes and splits into colours towards the rim
+  let r2 = dot(pv, pv) / (asp * asp + 1.0);
+  let qc = suv - 0.5;
+  let bend = on * 0.05 * r2 * r2; let ca = on * 0.005 * r2;
+  var c = vec3f(textureSampleLevel(sceneTex, linSmp, 0.5 + qc * (1.0 - bend - ca), 0.0).r,
+                textureSampleLevel(sceneTex, linSmp, 0.5 + qc * (1.0 - bend), 0.0).g,
+                textureSampleLevel(sceneTex, linSmp, 0.5 + qc * (1.0 - bend + ca), 0.0).b);
+  // breath fogging the glass from the bottom up
+  let fnz = textureSampleLevel(noiseTex, repSmp, vec3f(pv * 0.9, t * 0.05), 0.0).a;
+  let fog = on * G.vis2.x * smoothstep(-0.42, -1.05, pv.y - (fnz - 0.5) * 0.5) * 0.75;
+  let bo = pix * 0.012;
+  let blur = 0.25 * (textureSampleLevel(sceneTex, linSmp, suv + bo, 0.0).rgb + textureSampleLevel(sceneTex, linSmp, suv - bo, 0.0).rgb
+    + textureSampleLevel(sceneTex, linSmp, suv + vec2f(bo.x, -bo.y) * 1.7, 0.0).rgb + textureSampleLevel(sceneTex, linSmp, suv - vec2f(bo.x, -bo.y) * 1.7, 0.0).rgb);
+  let m = G.misc.x;
+  c = mix(c, blur * 0.9 + mix(WCOL, PCOL, m) * 0.10, fog);
+
+  // light shafts and bloom
+  let o = G.res.zw * 2.2;
+  var r = textureSampleLevel(raysTex, linSmp, suv, 0.0).r * 0.28;
+  r += (textureSampleLevel(raysTex, linSmp, suv + vec2f(o.x, o.y * 0.5), 0.0).r + textureSampleLevel(raysTex, linSmp, suv + vec2f(-o.x * 0.5, o.y), 0.0).r
+      + textureSampleLevel(raysTex, linSmp, suv + vec2f(-o.x, -o.y * 0.5), 0.0).r + textureSampleLevel(raysTex, linSmp, suv + vec2f(o.x * 0.5, -o.y), 0.0).r) * 0.18;
+  c += r * G.misc.z * mix(vec3f(0.42, 1.0, 0.88), vec3f(0.85, 0.62, 1.0), m) * G.misc.y;
+  let bl = textureSampleLevel(bloomTex, linSmp, suv, 0.0).rgb;
+  c += bl * G.fx.x;
+  // fine scratches in the glass only show against bright light; the beads catch a highlight
+  let blum = dot(bl, vec3f(0.3, 0.6, 0.1));
+  let s1 = textureSampleLevel(noiseTex, repSmp, vec3f(dot(pv, vec2f(0.93, 0.37)) * 0.33, dot(pv, vec2f(-0.37, 0.93)) * 8.0, 0.3), 0.0).a;
+  let s2 = textureSampleLevel(noiseTex, repSmp, vec3f(dot(pv, vec2f(-0.5, 0.87)) * 0.29, dot(pv, vec2f(-0.87, -0.5)) * 11.0, 0.7), 0.0).a;
+  c += vec3f(0.8, 0.95, 1.0) * ((smoothstep(0.70, 0.77, s1) + 0.7 * smoothstep(0.71, 0.78, s2)) * on * (0.004 + blum * 0.05));
+  c += vec3f(0.7, 0.9, 1.0) * (drop * smoothstep(0.5, 0.1, length(dd - vec2f(-0.3, 0.35))) * (0.03 + 0.25 * dot(c, vec3f(0.33))));
+
+  c *= G.sun.w;
+  // filmic curve (ACES fit), a little saturation, vignette
+  c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), vec3f(0.0), vec3f(1.0));
+  let l = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+  c = mix(vec3f(l), c, 1.12);
+  let q = uv - 0.5;
+  c *= 1.0 - dot(q, q) * 0.55;
+
+  // the helmet itself: dark, out of focus, with a thin glowing seam that turns red in the heat
+  let hot = G.vis2.y;
+  let seam = mix(vec3f(0.18, 0.80, 1.0), vec3f(1.0, 0.20, 0.03), hot) * (0.85 + 0.15 * sin(t * 2.1));
+  let env = bl / (1.0 + bl);
+  let rim = vec3f(0.008, 0.011, 0.016) + env * (0.4 * smoothstep(0.18, 0.0, f)) + seam * (0.045 * smoothstep(0.30, 0.0, f))
+          + vec3f(0.035, 0.05, 0.065) * exp(-abs(f - 0.075) / 0.004);
+  c = mix(c, rim, on * smoothstep(-0.010, 0.012, f));
+  c += seam * (on * (exp(-abs(f - 0.002) / 0.0035) * 0.85 + exp(-abs(f) / 0.03) * 0.15));
+
+  c = pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.2));
+  c += (ign(i.clip.xy) - 0.5) / 255.0;
+  return vec4f(c, 1.0);
+}
+`,no=`
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var smp: sampler;
+@group(0) @binding(2) var<uniform> T: vec4f;
+
+struct VO { @builtin(position) clip: vec4f, @location(0) uv: vec2f };
+@vertex fn vsFull(@builtin(vertex_index) vi: u32) -> VO {
+  var o: VO;
+  let p = vec2f(f32((vi << 1u) & 2u), f32(vi & 2u));
+  o.clip = vec4f(p * 2.0 - 1.0, 0.0, 1.0); o.uv = vec2f(p.x, 1.0 - p.y);
+  return o;
+}
+fn box(uv: vec2f, k: f32) -> vec4f {
+  let e = k / vec2f(textureDimensions(src));
+  return 0.25 * (textureSampleLevel(src, smp, uv + vec2f(-e.x, -e.y), 0.0) + textureSampleLevel(src, smp, uv + vec2f(e.x, -e.y), 0.0)
+               + textureSampleLevel(src, smp, uv + vec2f(-e.x, e.y), 0.0) + textureSampleLevel(src, smp, uv + vec2f(e.x, e.y), 0.0));
+}
+@fragment fn fsDown(i: VO) -> @location(0) vec4f { return box(i.uv, 1.0); }
+@fragment fn fsBright(i: VO) -> @location(0) vec4f {
+  let c = min(box(i.uv, 1.0).rgb, vec3f(24.0));
+  let l = max(c.r, max(c.g, c.b));
+  return vec4f(c * smoothstep(0.75, 2.2, l), 1.0);
+}
+@fragment fn fsUp(i: VO) -> @location(0) vec4f { return vec4f(box(i.uv, 0.75).rgb * T.y, 1.0); }
+
+// Cracked-plate pattern (tiling Voronoi): r = distance to the nearest crack, gb = direction to it, a = thin crack mask.
+fn h2(p: vec2f) -> vec2f { return fract(sin(vec2f(dot(p, vec2f(127.1, 311.7)), dot(p, vec2f(269.5, 183.3)))) * 43758.5453); }
+@fragment fn fsCrack(i: VO) -> @location(0) vec4f {
+  let NC = 12.0;
+  let x = i.uv * NC; let n = floor(x); let f = fract(x);
+  var mr = vec2f(0.0); var mg = vec2f(0.0); var md = 8.0;
+  for (var j = -1; j <= 1; j++) { for (var k = -1; k <= 1; k++) {
+    let g = vec2f(f32(k), f32(j));
+    let r = g + h2((n + g + NC) % NC) - f; let d = dot(r, r);
+    if (d < md) { md = d; mr = r; mg = g; }
+  } }
+  md = 8.0; var dir = vec2f(0.0);
+  for (var j = -2; j <= 2; j++) { for (var k = -2; k <= 2; k++) {
+    let g = mg + vec2f(f32(k), f32(j));
+    let r = g + h2((n + g + NC) % NC) - f;
+    if (dot(mr - r, mr - r) > 0.00001) { let e = normalize(r - mr); let d = dot(0.5 * (mr + r), e); if (d < md) { md = d; dir = e; } }
+  } }
+  let rr = clamp(md * 2.0, 0.0, 1.0);
+  return vec4f(rr, dir * 0.5 + 0.5, 1.0 - smoothstep(0.0, 0.07, rr));
+}
+
+// Caustics from first principles: the surface is a sum of ripples h; a ray landing at x has been shifted by grad h,
+// so a bundle of rays is squeezed by det(I + Hessian h) and its brightness is 1 / |det|. Bright lines are where det -> 0.
+// Whole-number wave vectors make the pattern tile.
+fn ripple(uv: vec2f, t: f32) -> f32 {
+  var kw = array<vec2f, 8>(vec2f(7, 3), vec2f(-5, 8), vec2f(2, -11), vec2f(11, 4), vec2f(-8, -7), vec2f(13, -2), vec2f(4, 12), vec2f(-12, 5));
+  var hxx = 0.0; var hyy = 0.0; var hxy = 0.0;
+  for (var n = 0; n < 8; n++) {
+    let k = kw[n]; let k2 = dot(k, k);
+    let dir = f32(n % 2) * 2.0 - 1.0;
+    let s = sin(6.2831853 * dot(k, uv) + t * (0.35 + 0.11 * sqrt(k2)) * dir + f32(n) * 1.7) * 0.55 / k2;
+    hxx -= s * k.x * k.x; hyy -= s * k.y * k.y; hxy -= s * k.x * k.y;
+  }
+  return 0.12 / (abs((1.0 + hxx) * (1.0 + hyy) - hxy * hxy) + 0.06);
+}
+
+// r = caustic network, g = broad light-shaft cookie. Both tile.
+@fragment fn fsCaustic(i: VO) -> @location(0) vec4f {
+  let t = T.x;
+  let TAU = 6.28318530718;
+  let ca = min(ripple(i.uv, t) + 0.7 * ripple(i.uv.yx + 0.37, t * 1.13 + 5.0), 4.0);
+  let u = i.uv * TAU;
+  let a = sin(u.x * 2.0 + t * 0.21 + 2.0 * sin(u.y + t * 0.13)) + sin(u.y * 3.0 - t * 0.17 + 2.0 * sin(u.x * 2.0 - t * 0.11));
+  let b = sin(u.x * 5.0 - t * 0.31 + 1.5 * sin(u.y * 4.0 + t * 0.23)) * sin(u.y * 6.0 + t * 0.27 + 1.5 * sin(u.x * 3.0 - t * 0.19));
+  let cookie = smoothstep(-0.3, 1.6, a + b * 0.9);
+  return vec4f(ca, cookie * cookie * (0.6 + 0.8 * ca), 0.0, 1.0);
+}
+`;function Nt(s){let e=s>>>0;return()=>{e=e+1831565813|0;let o=Math.imul(e^e>>>15,1|e);return o=o+Math.imul(o^o>>>7,61|o)^o,((o^o>>>14)>>>0)/4294967296}}function ye(s,e,o){let n=Math.imul(s,374761393)+Math.imul(e,668265263)+Math.imul(o,1274126177)|0;return n=Math.imul(n^n>>>13,1274126177),((n^n>>>16)>>>0)/4294967296}function Ro(s,e,o){let n=Math.floor(s),t=Math.floor(e),a=Math.floor(o),i=s-n,r=e-t,c=o-a;i=i*i*(3-2*i),r=r*r*(3-2*r),c=c*c*(3-2*c);let l=ye(n,t,a),f=ye(n+1,t,a),p=ye(n,t+1,a),u=ye(n+1,t+1,a),x=ye(n,t,a+1),v=ye(n+1,t,a+1),S=ye(n,t+1,a+1),g=ye(n+1,t+1,a+1),B=l+(f-l)*i,k=p+(u-p)*i,d=x+(v-x)*i,M=S+(g-S)*i,G=B+(k-B)*r,T=d+(M-d)*r;return G+(T-G)*c}function Pt(s,e,o,n=4){let t=.5,a=0,i=0;for(let r=0;r<n;r++)a+=t*Ro(s,e,o),i+=t,s=s*2.03+17.1,e=e*2.03+3.7,o=o*2.03+9.2,t*=.5;return a/i}var nt=(s,e,o)=>s<e?e:s>o?o:s,Lt=(s,e,o)=>{let n=nt((o-s)/(e-s),0,1);return n*n*(3-2*n)};function ao(s,e,o,n,t){let a=1/Math.tan(e/2);s.fill(0),s[0]=a/o,s[5]=a,s[10]=t/(n-t),s[11]=-1,s[14]=n*t/(n-t)}function ro(s,e,o,n,t,a,i){s.fill(0),s[0]=2/(o-e),s[5]=2/(t-n),s[10]=1/(a-i),s[12]=(e+o)/(e-o),s[13]=(t+n)/(n-t),s[14]=a/(a-i),s[15]=1}function T0(s,e,o,n,t,a,i,r,c,l){let f=e-t,p=o-a,u=n-i,x=1/Math.hypot(f,p,u);f*=x,p*=x,u*=x;let v=c*u-l*p,S=l*f-r*u,g=r*p-c*f;x=1/Math.hypot(v,S,g),v*=x,S*=x,g*=x;let B=p*g-u*S,k=u*v-f*g,d=f*S-p*v;s[0]=v,s[1]=B,s[2]=f,s[3]=0,s[4]=S,s[5]=k,s[6]=p,s[7]=0,s[8]=g,s[9]=d,s[10]=u,s[11]=0,s[12]=-(v*e+S*o+g*n),s[13]=-(B*e+k*o+d*n),s[14]=-(f*e+p*o+u*n),s[15]=1}function A0(s,e,o){for(let n=0;n<4;n++){let t=o[n*4],a=o[n*4+1],i=o[n*4+2],r=o[n*4+3];dt[n*4]=e[0]*t+e[4]*a+e[8]*i+e[12]*r,dt[n*4+1]=e[1]*t+e[5]*a+e[9]*i+e[13]*r,dt[n*4+2]=e[2]*t+e[6]*a+e[10]*i+e[14]*r,dt[n*4+3]=e[3]*t+e[7]*a+e[11]*i+e[15]*r}s.set(dt)}var dt=new Float32Array(16);function r0(s,e){let o=e[0],n=e[1],t=e[2],a=e[3],i=e[4],r=e[5],c=e[6],l=e[7],f=e[8],p=e[9],u=e[10],x=e[11],v=e[12],S=e[13],g=e[14],B=e[15],k=o*r-n*i,d=o*c-t*i,M=o*l-a*i,G=n*c-t*r,T=n*l-a*r,A=t*l-a*c,_=f*S-p*v,D=f*g-u*v,$=f*B-x*v,K=p*g-u*S,Q=p*B-x*S,st=u*B-x*g,H=k*st-d*Q+M*K+G*$-T*D+A*_;H=1/H,dt[0]=(r*st-c*Q+l*K)*H,dt[1]=(t*Q-n*st-a*K)*H,dt[2]=(S*A-g*T+B*G)*H,dt[3]=(u*T-p*A-x*G)*H,dt[4]=(c*$-i*st-l*D)*H,dt[5]=(o*st-t*$+a*D)*H,dt[6]=(g*M-v*A-B*d)*H,dt[7]=(f*A-u*M+x*d)*H,dt[8]=(i*Q-r*$+l*_)*H,dt[9]=(n*$-o*Q-a*_)*H,dt[10]=(v*T-S*M+B*k)*H,dt[11]=(p*M-f*T-x*k)*H,dt[12]=(r*D-i*K-c*_)*H,dt[13]=(o*K-n*D+t*_)*H,dt[14]=(S*d-v*G-g*k)*H,dt[15]=(f*G-p*d+u*k)*H,s.set(dt)}function B0(s,e,o,n,t,a,i,r){let c=Math.cos(t),l=Math.sin(t),f=Math.cos(a),p=Math.sin(a),u=Math.cos(i),x=Math.sin(i),v=c*u+l*p*x,S=-c*x+l*p*u,g=l*f,B=f*x,k=f*u,d=-p,M=-l*u+c*p*x,G=l*x+c*p*u,T=c*f;s[0]=v*r,s[1]=B*r,s[2]=M*r,s[3]=0,s[4]=S*r,s[5]=k*r,s[6]=G*r,s[7]=0,s[8]=g*r,s[9]=d*r,s[10]=T*r,s[11]=0,s[12]=e,s[13]=o,s[14]=n,s[15]=1}function io(s,e,o,n,t,a){let i=t,r=0,c=-o,l=1+n;l<1e-4&&(i=1,r=0,c=0,l=0);let f=1/Math.hypot(i,r,c,l);i*=f,r*=f,c*=f,l*=f;let p=Math.sin(a/2),u=Math.cos(a/2);s[e]=i*u-c*p,s[e+1]=l*p+r*u,s[e+2]=c*u+i*p,s[e+3]=l*u-r*p}var We=s=>(+s).toFixed(4),Oo=`
+fn hash3(p: vec3f) -> f32 {
+  var q = fract(p * vec3f(0.1031, 0.1030, 0.0973));
+  q += dot(q, q.yxz + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+fn vn(p: vec3f) -> f32 {
+  let i = floor(p); let w = fract(p); let u = w * w * (3.0 - 2.0 * w);
+  return mix(mix(mix(hash3(i), hash3(i + vec3f(1, 0, 0)), u.x), mix(hash3(i + vec3f(0, 1, 0)), hash3(i + vec3f(1, 1, 0)), u.x), u.y),
+             mix(mix(hash3(i + vec3f(0, 0, 1)), hash3(i + vec3f(1, 0, 1)), u.x), mix(hash3(i + vec3f(0, 1, 1)), hash3(i + vec3f(1, 1, 1)), u.x), u.y), u.z);
+}
+fn fbm(p: vec3f) -> f32 {
+  var a = 0.5; var s = 0.0; var q = p;
+  for (var i = 0; i < 4; i++) { s += a * vn(q); q = q * 2.03 + vec3f(17.1, 3.7, 9.2); a *= 0.5; }
+  return s;
+}
+fn smin(a: f32, b: f32, k: f32) -> f32 { let h = max(k - abs(a - b), 0.0) / k; return min(a, b) - h * h * k * 0.25; }
+fn smax(a: f32, b: f32, k: f32) -> f32 { return -smin(-a, -b, k); }
+fn cap(p: vec3f, a: vec3f, b: vec3f, r: f32) -> f32 {
+  let pa = p - a; let ba = b - a; let h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h) - r;
+}
+`;function Co(s){let e=s.flats.map(o=>`vec4f(${We(o[0])}, ${We(o[1])}, ${We(o[2])}, ${We(o[3])})`).join(", ");return`
+struct SP { origin: vec4f, dims: vec4u, info: vec4u };
+@group(0) @binding(0) var<uniform> U: SP;
+@group(0) @binding(1) var<storage, read_write> outB: array<f32>;
+@group(0) @binding(2) var<storage, read> prims: array<vec4f>;
+${Oo}
+const NFLAT = ${s.flats.length};
+const FLATS = array<vec4f, NFLAT>(${e});
+const RIM: f32 = ${We(s.RIM)};
+
+fn bedH(xz: vec2f) -> f32 {
+  var h = 1.5 + 8.0 * fbm(vec3f(xz.x * 0.011, 1.7, xz.y * 0.011)) + 1.6 * vn(vec3f(xz.x * 0.055, 9.1, xz.y * 0.055));
+  for (var i = 0; i < NFLAT; i++) {
+    let z = FLATS[i];
+    h = mix(h, z.w, 1.0 - smoothstep(z.z * 0.45, z.z, distance(xz, z.xy)));
+  }
+  return h;
+}
+
+fn sdTerrain(p: vec3f) -> f32 {
+  let wv = vec3f(vn(p * 0.027 + 7.0), vn(p * 0.027 + 19.0), vn(p * 0.027 + 31.0)) - 0.5;
+  let pw = p + wv * vec3f(15.0, 6.0, 15.0);
+  var dr = 1e9; var dcut = 1e9;
+  let n = U.info.y;
+  for (var i = 0u; i < n; i++) {
+    let a = prims[2u * i]; let b = prims[2u * i + 1u];
+    let t = u32(b.w);
+    if (t == 0u) {
+      let q = (pw - a.xyz) / b.xyz;
+      dr = smin(dr, (length(q) - 1.0) * min(b.x, min(b.y, b.z)), 7.0);
+    } else if (t == 1u) {
+      dr = smin(dr, cap(pw, a.xyz, b.xyz, a.w), 5.0);
+    } else if (t == 2u) {
+      let c = cos(b.y); let s = sin(b.y);
+      var q = pw - a.xyz;
+      q = vec3f(c * q.x + s * q.z, q.y / b.z, -s * q.x + c * q.z);
+      dr = smin(dr, length(vec2f(length(q.xy) - a.w, q.z)) - b.x, 4.0);
+    } else {
+      dcut = min(dcut, cap(pw, a.xyz, b.xyz, a.w));
+    }
+  }
+  // world rim: solid outside a wobbly circle
+  dr = smin(dr, RIM + (fbm(vec3f(p.x * 0.018, 3.0, p.z * 0.018)) - 0.5) * 34.0 - length(p.xz), 9.0);
+  // rock surface: big lumps, medium lumps, horizontal strata
+  let n1 = fbm(pw * 0.05 + 3.0) - 0.47;
+  let n2 = fbm(pw * 0.17 + 11.0) - 0.47;
+  let strat = abs(fract(pw.y * 0.21 + n1 * 1.6) - 0.5) - 0.25;
+  dr += n1 * 12.0 + n2 * 3.6 - strat * 1.3;
+  dr = smax(dr, -dcut, 3.0);
+  let h = bedH(p.xz);
+  let db = (p.y - h - 0.7 * vn(p * 0.31)) * 0.8;
+  return smin(db, dr, 3.5);
+}
+
+fn sdShip(p: vec3f) -> f32 {
+  let L = 16.0;
+  let xn = clamp(p.x / L, -1.0, 1.0);
+  let ax = abs(xn);
+  let bx = select(pow(max(1.0 - pow(ax, 3.2), 0.0), 0.5), pow(max(1.0 - pow(ax, 1.9), 0.0), 0.75), xn > 0.0);
+  let hb = 4.0 * bx + 0.05;
+  let sheer = 2.0 + 1.5 * xn * xn + 1.9 * smoothstep(-8.0, -9.2, p.x) + 0.9 * smoothstep(10.5, 11.5, p.x);
+  let keel = -3.3 + 1.2 * pow(ax, 3.0);
+  let hgt = sheer - keel;
+  let t = clamp((p.y - keel) / hgt, 0.0, 1.0);
+  let w = hb * pow(t, 0.4);
+  let dwdy = hb * 0.4 * pow(max(t, 0.04), -0.6) / hgt;
+  var hull = (abs(p.z) - w) / sqrt(1.0 + dwdy * dwdy);
+  hull = max(hull, p.y - sheer);
+  hull = max(hull, abs(p.x) - L);
+  var d = abs(hull + 0.2) - 0.18;
+  // rot: the deck is far more eaten away than the sides
+  let n = fbm(p * 0.33 + 4.0);
+  let n2 = fbm(p * 0.21 + 40.0);
+  let deck = smoothstep(sheer - 1.3, sheer - 0.45, p.y);
+  d = max(d, (n - mix(0.61, 0.43, deck)) * 3.0);
+  d = max(d, -(length(p - vec3f(5.0, -0.4, 3.7)) - 3.1 + (n - 0.47) * 2.5));
+  d = max(d, -(length(p - vec3f(-6.5, 1.0, -3.9)) - 2.2 + (n2 - 0.47) * 2.5));
+  // ribs + deck beams
+  let band = abs(fract(p.x / 1.6) - 0.5) * 1.6 - 0.15;
+  var rib = max(abs(hull + 0.56) - 0.2, band);
+  rib = max(rib, (n2 - 0.68) * 3.0);
+  d = min(d, rib);
+  // keel, stem and stern posts
+  d = min(d, max(max(abs(p.z) - 0.28, abs(p.y - keel - 0.05) - 0.45), abs(p.x) - L - 0.3));
+  d = min(d, cap(p, vec3f(L - 0.4, -2.2, 0.0), vec3f(L + 1.3, 6.0, 0.0), 0.3));
+  d = min(d, cap(p, vec3f(-L + 0.3, -2.2, 0.0), vec3f(-L - 0.7, 7.2, 0.0), 0.3));
+  // masts and spars
+  d = min(d, cap(p, vec3f(0.5, -2.8, 0.0), vec3f(-0.5, 19.0, 0.5), 0.36));
+  d = min(d, cap(p, vec3f(-0.3, 13.6, -5.2), vec3f(-0.2, 12.9, 5.2), 0.2));
+  d = min(d, cap(p, vec3f(-0.1, 8.2, -5.8), vec3f(0.0, 8.9, 5.8), 0.22));
+  d = min(d, max(length(p.xz - vec2f(-0.35, 0.4)) - 0.95, abs(p.y - 15.8) - 0.28));
+  d = min(d, cap(p, vec3f(9.5, -2.0, 0.0), vec3f(10.3, 7.8, -0.7), 0.33));
+  d = min(d, cap(p, vec3f(10.4, 5.0, -1.0), vec3f(15.2, 3.3, -5.4), 0.3));
+  d = min(d, cap(p, vec3f(-11.0, 0.0, 0.0), vec3f(-11.9, 14.2, -0.4), 0.29));
+  d = min(d, cap(p, vec3f(-11.6, 10.2, -3.4), vec3f(-11.5, 9.7, 3.4), 0.2));
+  d = min(d, cap(p, vec3f(14.5, 3.7, 0.0), vec3f(22.0, 6.4, 0.2), 0.25));
+  return d;
+}
+
+fn sdWhale(p0: vec3f) -> f32 {
+  var p = p0;
+  p.z -= 1.7 * sin(clamp(p.y, -6.0, 14.0) * 0.14);
+  let h = clamp((p.y + 6.0) / 19.0, 0.0, 1.0);
+  let r = mix(3.4, 1.15, pow(h, 0.75));
+  let q = vec3f(p.x / 0.82, p.y - clamp(p.y, -6.0, 13.0), p.z / 1.15);
+  var d = (length(q) - r) * 0.82;
+  let pf = vec3f(abs(p.x), p.y, p.z);
+  var fl = 1e9;
+  for (var i = 0; i <= 30; i++) {
+    let t = f32(i) / 30.0;
+    let c = mix(mix(vec2f(0.0, 12.8), vec2f(7.2, 11.4), t), mix(vec2f(7.2, 11.4), vec2f(12.4, 18.6), t), t);
+    let w = mix(3.3, 0.45, pow(t, 0.9));
+    let th = mix(0.85, 0.15, pow(t, 0.7));
+    let e = vec2f(length(pf.xy - c) / w, pf.z / th);
+    fl = min(fl, (length(e) - 1.0) * th);
+  }
+  d = smin(d, fl, 1.6);
+  // notch between the flukes
+  d = smax(d, -(length(vec2f(p.x * 1.4, p.y - 17.0)) - 1.7), 0.6);
+  d += (fbm(p0 * 0.9) - 0.47) * 0.4 + (fbm(p0 * 3.1) - 0.47) * 0.09;
+  return d;
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let c = vec3u(id.x, id.y, id.z + U.info.x);
+  if (any(c >= U.dims.xyz)) { return; }
+  let p = U.origin.xyz + vec3f(c) * U.origin.w;
+  var d = 0.0;
+  if (U.dims.w == 0u) { d = sdTerrain(p); } else if (U.dims.w == 1u) { d = sdShip(p); } else { d = sdWhale(p); }
+  outB[c.x + U.dims.x * (c.y + U.dims.y * c.z)] = d;
+}
+`}function co(s,e){let o=s.createShaderModule({code:Co(e)}),n=s.createComputePipeline({layout:"auto",compute:{module:o,entryPoint:"main"}});return async function(a,i,r,c,l){let f=r[0]*r[1]*r[2],p=s.createBuffer({size:f*4,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC}),u=s.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),x=l&&l.length?l:new Float32Array(8),v=s.createBuffer({size:x.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});s.queue.writeBuffer(v,0,x);let S=s.createBindGroup({layout:n.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:u}},{binding:1,resource:{buffer:p}},{binding:2,resource:{buffer:v}}]}),g=new ArrayBuffer(48),B=new Float32Array(g),k=new Uint32Array(g);B.set([a[0],a[1],a[2],i]),k.set([r[0],r[1],r[2],c],4);let d=16;for(let A=0;A<r[2];A+=d){k[8]=A,k[9]=l?l.length/8:0,s.queue.writeBuffer(u,0,g);let _=s.createCommandEncoder(),D=_.beginComputePass();D.setPipeline(n),D.setBindGroup(0,S),D.dispatchWorkgroups(Math.ceil(r[0]/4),Math.ceil(r[1]/4),Math.ceil(Math.min(d,r[2]-A)/4)),D.end(),s.queue.submit([_.finish()])}let M=s.createBuffer({size:f*4,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST}),G=s.createCommandEncoder();G.copyBufferToBuffer(p,0,M,0,f*4),s.queue.submit([G.finish()]),await M.mapAsync(GPUMapMode.READ);let T=new Float32Array(M.getMappedRange().slice(0));return M.unmap(),M.destroy(),p.destroy(),u.destroy(),v.destroy(),T}}var Ue=class{constructor(e,o,n,t){this.g=e,this.o=o,this.cell=n,this.n=t,this.sy=t[0],this.sz=t[0]*t[1]}at(e,o,n){let t=this.n,a=this.g;e=e<0?0:e>t[0]-1.001?t[0]-1.001:e,o=o<0?0:o>t[1]-1.001?t[1]-1.001:o,n=n<0?0:n>t[2]-1.001?t[2]-1.001:n;let i=e|0,r=o|0,c=n|0,l=e-i,f=o-r,p=n-c,u=i+this.sy*r+this.sz*c,x=this.sy,v=this.sz,S=a[u]+(a[u+1]-a[u])*l,g=a[u+x]+(a[u+x+1]-a[u+x])*l,B=a[u+v]+(a[u+v+1]-a[u+v])*l,k=a[u+v+x]+(a[u+v+x+1]-a[u+v+x])*l,d=S+(g-S)*f,M=B+(k-B)*f;return d+(M-d)*p}sd(e,o,n){let t=this.o,a=1/this.cell;return this.at((e-t[0])*a,(o-t[1])*a,(n-t[2])*a)}floorY(e,o,n=-1e9){let t=this.o,a=1/this.cell,i=(e-t[0])*a,r=(o-t[2])*a,c=Math.max(0,Math.floor((n-t[1])*a)),l=this.at(i,c,r);for(c++;c<this.n[1];c++){let f=this.at(i,c,r);if(l<=0&&f>0)return t[1]+(c-1+l/(l-f))*this.cell;l=f}return 1e9}ceilY(e,o,n){let t=this.o,a=1/this.cell,i=(e-t[0])*a,r=(n-t[2])*a,c=Math.ceil((o-t[1])*a)+1,l=this.at(i,c,r);for(c++;c<this.n[1];c++){let f=this.at(i,c,r);if(l>0&&f<=0)return t[1]+(c-1+l/(l-f))*this.cell;l=f}return 1e9}};function i0(s,e){let o=s.g,[n,t,a]=s.n,i=s.sy,r=s.sz,c=new Int32Array(n*t*a),l=new Float32Array(1<<18),f=0;for(let d=0;d<a-1;d++)for(let M=0;M<t-1;M++){let G=M*i+d*r;for(let T=0;T<n-1;T++,G++){let A=o[G],_=o[G+1],D=o[G+i],$=o[G+i+1],K=o[G+r],Q=o[G+r+1],st=o[G+r+i],H=o[G+r+i+1],ht=A<0,At=_<0,_t=D<0,Dt=$<0,ie=K<0,jt=Q<0,ce=st<0,le=H<0,lt=ht+At+_t+Dt+ie+jt+ce+le;if(lt===0||lt===8)continue;let at=0,xt=0,wt=0,j=0;if(ht!==At&&(at+=A/(A-_),j++),_t!==Dt&&(at+=D/(D-$),xt++,j++),ie!==jt&&(at+=K/(K-Q),wt++,j++),ce!==le&&(at+=st/(st-H),xt++,wt++,j++),ht!==_t&&(xt+=A/(A-D),j++),At!==Dt&&(xt+=_/(_-$),at++,j++),ie!==ce&&(xt+=K/(K-st),wt++,j++),jt!==le&&(xt+=Q/(Q-H),at++,wt++,j++),ht!==ie&&(wt+=A/(A-K),j++),At!==jt&&(wt+=_/(_-Q),at++,j++),_t!==ce&&(wt+=D/(D-st),xt++,j++),Dt!==le&&(wt+=$/($-H),at++,xt++,j++),f*3+3>l.length){let he=new Float32Array(l.length*2);he.set(l),l=he}l[f*3]=T+at/j,l[f*3+1]=M+xt/j,l[f*3+2]=d+wt/j,c[G]=++f}}let p=new Uint32Array(1<<19),u=0,x=(d,M,G,T,A)=>{if(u+6>p.length){let _=new Uint32Array(p.length*2);_.set(p),p=_}d--,M--,G--,T--,A?(p[u++]=d,p[u++]=G,p[u++]=M,p[u++]=d,p[u++]=T,p[u++]=G):(p[u++]=d,p[u++]=M,p[u++]=G,p[u++]=d,p[u++]=G,p[u++]=T)};for(let d=1;d<a-1;d++)for(let M=1;M<t-1;M++){let G=1+M*i+d*r;for(let T=1;T<n-1;T++,G++){let A=o[G]<0;A!==o[G+1]<0&&x(c[G],c[G-i],c[G-i-r],c[G-r],!A),A!==o[G+i]<0&&x(c[G],c[G-r],c[G-r-1],c[G-1],!A),A!==o[G+r]<0&&x(c[G],c[G-1],c[G-1-i],c[G-i],!A)}}let v=new Float32Array(f*4),S=s.cell,g=s.o,B=e/S,k=e*3.2/S;for(let d=0;d<f;d++){let M=l[d*3],G=l[d*3+1],T=l[d*3+2],A=s.at(M+.6,G,T)-s.at(M-.6,G,T),_=s.at(M,G+.6,T)-s.at(M,G-.6,T),D=s.at(M,G,T+.6)-s.at(M,G,T-.6),$=1/(Math.hypot(A,_,D)||1);A*=$,_*=$,D*=$;let K=Math.min(1,Math.max(0,s.at(M+A*B,G+_*B,T+D*B)/e)),Q=Math.min(1,Math.max(0,s.at(M+A*k,G+_*k,T+D*k)/(e*3.2)));v[d*4]=A,v[d*4+1]=_,v[d*4+2]=D,v[d*4+3]=.25+.75*(.45*K+.55*Q),l[d*3]=g[0]+M*S,l[d*3+1]=g[1]+G*S,l[d*3+2]=g[2]+T*S}return{pos:l.subarray(0,f*3),nrm:v,idx:p.subarray(0,u),nv:f}}function lo(s){let n=s.createTexture({size:[128,128,128],dimension:"3d",format:"rgba8unorm",mipLevelCount:6,usage:GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.TEXTURE_BINDING}),t=s.createShaderModule({code:`
+@group(0) @binding(0) var dst: texture_storage_3d<rgba8unorm, write>;
+fn hg(i: vec3i, per: i32, oct: u32) -> vec3f {
+  let w = ((i % per) + per) % per;
+  var h = (u32(w.x) * 1597334677u) ^ (u32(w.y) * 3812015801u) ^ (u32(w.z) * 2798796415u) ^ (oct * 668265263u);
+  h = h * 0x27d4eb2du; h ^= h >> 15u; h = h * 0x85ebca6bu; h ^= h >> 13u;
+  let a = f32(h & 0xffffu) / 65535.0 * 6.2831853; let z = f32((h >> 16u) & 0xffffu) / 65535.0 * 2.0 - 1.0;
+  let r = sqrt(max(1.0 - z * z, 0.0));
+  return vec3f(r * cos(a), r * sin(a), z);
+}
+fn pn(p: vec3f, per: i32, oct: u32) -> f32 {
+  let i = vec3i(floor(p)); let w = fract(p); let u = w * w * w * (w * (w * 6.0 - 15.0) + 10.0);
+  let a = dot(hg(i, per, oct), w); let b = dot(hg(i + vec3i(1, 0, 0), per, oct), w - vec3f(1, 0, 0));
+  let c = dot(hg(i + vec3i(0, 1, 0), per, oct), w - vec3f(0, 1, 0)); let d = dot(hg(i + vec3i(1, 1, 0), per, oct), w - vec3f(1, 1, 0));
+  let e = dot(hg(i + vec3i(0, 0, 1), per, oct), w - vec3f(0, 0, 1)); let g = dot(hg(i + vec3i(1, 0, 1), per, oct), w - vec3f(1, 0, 1));
+  let h = dot(hg(i + vec3i(0, 1, 1), per, oct), w - vec3f(0, 1, 1)); let k = dot(hg(i + vec3i(1, 1, 1), per, oct), w - vec3f(1, 1, 1));
+  return mix(mix(mix(a, b, u.x), mix(c, d, u.x), u.y), mix(mix(e, g, u.x), mix(h, k, u.x), u.y), u.z);
+}
+fn nf(q: vec3f) -> f32 {
+  var s = 0.0; var a = 0.5; var fr = 4;
+  for (var o = 0u; o < 4u; o++) { s += a * pn(q * f32(fr), fr, o); fr *= 2; a *= 0.55; }
+  return s;
+}
+@compute @workgroup_size(4, 4, 4)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let e = 1.0 / 128.0; let q = (vec3f(id) + 0.5) * e;
+  let v = nf(q);
+  let g = vec3f(nf(q + vec3f(e, 0, 0)) - v, nf(q + vec3f(0, e, 0)) - v, nf(q + vec3f(0, 0, e)) - v) * 9.0;
+  textureStore(dst, id, vec4f(clamp(g * 0.5 + 0.5, vec3f(0), vec3f(1)), clamp(v * 1.25 + 0.5, 0.0, 1.0)));
+}`}),a=s.createShaderModule({code:`
+@group(0) @binding(0) var src: texture_3d<f32>;
+@group(0) @binding(1) var dst: texture_storage_3d<rgba8unorm, write>;
+@compute @workgroup_size(4, 4, 4)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id >= textureDimensions(dst))) { return; }
+  var s = vec4f(0);
+  for (var k = 0u; k < 8u; k++) { s += textureLoad(src, id * 2u + vec3u(k & 1u, (k >> 1u) & 1u, k >> 2u), 0); }
+  textureStore(dst, id, s / 8.0);
+}`}),i=s.createComputePipeline({layout:"auto",compute:{module:t,entryPoint:"main"}}),r=s.createComputePipeline({layout:"auto",compute:{module:a,entryPoint:"main"}}),c=p=>n.createView({baseMipLevel:p,mipLevelCount:1}),l=s.createCommandEncoder(),f=l.beginComputePass();f.setPipeline(i),f.setBindGroup(0,s.createBindGroup({layout:i.getBindGroupLayout(0),entries:[{binding:0,resource:c(0)}]})),f.dispatchWorkgroups(128/4,128/4,128/4),f.end();for(let p=1;p<6;p++){f=l.beginComputePass(),f.setPipeline(r),f.setBindGroup(0,s.createBindGroup({layout:r.getBindGroupLayout(0),entries:[{binding:0,resource:c(p-1)},{binding:1,resource:c(p)}]}));let u=Math.max(1,(128>>p)/4);f.dispatchWorkgroups(u,u,u),f.end()}return s.queue.submit([l.finish()]),n}var Vt=class{constructor(){this.p=[],this.n=[],this.c=[],this.i=[]}get nv(){return this.p.length/3}vert(e,o,n,t=1,a=1,i=1,r=0,c=1){return this.p.push(e,o,n),this.n.push(0,0,0,c),this.c.push(t,a,i,r),this.p.length/3-1}tri(e,o,n){this.i.push(e,o,n)}quad(e,o,n,t){this.i.push(e,o,n,e,n,t)}normals(){let{p:e,n:o,i:n}=this;for(let t=0;t<o.length;t+=4)o[t]=o[t+1]=o[t+2]=0;for(let t=0;t<n.length;t+=3){let a=n[t]*3,i=n[t+1]*3,r=n[t+2]*3,c=e[i]-e[a],l=e[i+1]-e[a+1],f=e[i+2]-e[a+2],p=e[r]-e[a],u=e[r+1]-e[a+1],x=e[r+2]-e[a+2],v=l*x-f*u,S=f*p-c*x,g=c*u-l*p;for(let B of[n[t],n[t+1],n[t+2]])o[B*4]+=v,o[B*4+1]+=S,o[B*4+2]+=g}for(let t=0;t<o.length;t+=4){let a=Math.hypot(o[t],o[t+1],o[t+2])||1;o[t]/=a,o[t+1]/=a,o[t+2]/=a}return this}};function F0(s,e,o){let n=s.length/3,t=new ArrayBuffer(n*20),a=new Float32Array(t),i=new Int8Array(t),r=new Uint8Array(t);for(let c=0;c<n;c++){a[c*5]=s[c*3],a[c*5+1]=s[c*3+1],a[c*5+2]=s[c*3+2];let l=c*20+12;i[l]=Math.round(nt(e[c*4],-1,1)*127),i[l+1]=Math.round(nt(e[c*4+1],-1,1)*127),i[l+2]=Math.round(nt(e[c*4+2],-1,1)*127),i[l+3]=Math.round(nt(e[c*4+3],0,1)*127),r[l+4]=Math.round(nt(o[c*4],0,1)*255),r[l+5]=Math.round(nt(o[c*4+1],0,1)*255),r[l+6]=Math.round(nt(o[c*4+2],0,1)*255),r[l+7]=Math.round(nt(o[c*4+3],0,1)*255)}return t}function He(s){let e=0,o=0;for(let c of s)e+=c.nv,o+=c.i.length;let n=new Uint8Array(e*20),t=new Uint32Array(o),a=[],i=0,r=0;for(let c of s)n.set(new Uint8Array(F0(c.p,c.n,c.c)),i*20),t.set(c.i,r),a.push({baseVertex:i,firstIndex:r,indexCount:c.i.length}),i+=c.nv,r+=c.i.length;return{vb:n,ib:t,ranges:a}}function No(s){let e=(1+Math.sqrt(5))/2,o=[-1,e,0,1,e,0,-1,-e,0,1,-e,0,0,-1,e,0,1,e,0,-1,-e,0,1,-e,e,0,-1,e,0,1,-e,0,-1,-e,0,1],n=[0,11,5,0,5,1,0,1,7,0,7,10,0,10,11,1,5,9,5,11,4,11,10,2,10,7,6,7,1,8,3,9,4,3,4,2,3,2,6,3,6,8,3,8,9,4,9,5,2,4,11,6,2,10,8,6,7,9,8,1];for(let t=0;t<s;t++){let a=new Map,i=[],r=(c,l)=>{let f=c<l?c*65536+l:l*65536+c,p=a.get(f);return p===void 0&&(p=o.length/3,o.push((o[c*3]+o[l*3])/2,(o[c*3+1]+o[l*3+1])/2,(o[c*3+2]+o[l*3+2])/2),a.set(f,p)),p};for(let c=0;c<n.length;c+=3){let l=n[c],f=n[c+1],p=n[c+2],u=r(l,f),x=r(f,p),v=r(p,l);i.push(l,u,v,f,x,u,p,v,x,u,x,v)}n=i}for(let t=0;t<o.length;t+=3){let a=Math.hypot(o[t],o[t+1],o[t+2]);o[t]/=a,o[t+1]/=a,o[t+2]/=a}return{v:o,f:n}}function Pe(s,e){let o=Nt(s),{v:n,f:t}=No(e),a=new Vt,i=.8+o()*.5,r=.55+o()*.4,c=.8+o()*.5,l=o()*100,f=[];for(let p=0;p<5;p++){let u=o()*6.283,x=o()*1.6-.8,v=Math.sqrt(1-x*x);f.push([v*Math.cos(u),x,v*Math.sin(u),.62+o()*.3])}for(let p=0;p<n.length;p+=3){let u=n[p],x=n[p+1],v=n[p+2],S=Pt(u*1.4+l,x*1.4,v*1.4,3)-.5,g=Pt(u*4+l,x*4+7,v*4,2)-.5,B=1+S*.9+g*.22;u*=B,x*=B,v*=B;for(let k of f){let d=u*k[0]+x*k[1]+v*k[2]-k[3];d>0&&(u-=k[0]*d*.85,x-=k[1]*d*.85,v-=k[2]*d*.85)}a.vert(u*i,x*r,v*c,1,1,1,0,nt(.75+S*1.2+g,.35,1))}return a.i=t,a.normals()}function c0(s,e,o,n,t,a,i,r,c){let l=o[0]-e[0],f=o[1]-e[1],p=o[2]-e[2],u=Math.hypot(l,f,p);l/=u,f/=u,p/=u;let x=0,v=1,S=0;Math.abs(f)>.9&&(x=1,v=0);let g=f*S-p*v,B=p*x-l*S,k=l*v-f*x,d=Math.hypot(g,B,k);g/=d,B/=d,k/=d;let M=B*p-k*f,G=k*l-g*p,T=g*f-B*l,A=s.nv;for(let _=0;_<2;_++){let D=_?o:e,$=_?t:n,K=_?r:i;for(let Q=0;Q<a;Q++){let st=Q/a*6.2832,H=Math.cos(st)*$,ht=Math.sin(st)*$;s.vert(D[0]+g*H+M*ht,D[1]+B*H+G*ht,D[2]+k*H+T*ht,K[0],K[1],K[2],K[3],K[4]??1)}}for(let _=0;_<a;_++){let D=(_+1)%a;s.quad(A+_,A+a+_,A+a+D,A+D)}if(c){let _=s.vert(o[0]+l*t*1.2,o[1]+f*t*1.2,o[2]+p*t*1.2,r[0],r[1],r[2],r[3],r[4]??1);for(let D=0;D<a;D++)s.tri(A+a+D,_,A+a+(D+1)%a)}}function Re(s,e=0){let o=Nt(s),n=new Vt,t=e?5:4,a=e?4:5,i=(c,l,f,p,u)=>{let x=[c[0]+l[0]*p,c[1]+l[1]*p,c[2]+l[2]*p],v=nt(c[1]/1.6,0,1),S=nt(x[1]/1.6,0,1),g=.45+.45*v,B=.45+.45*S,k=u>=t,d=k?.9:.35+.3*S;if(c0(n,c,x,f,f*(k?.55:.72),a,[g,g,g,.3+.3*v,.55+.45*v],[k?1:B,k?1:B,k?1:B,d,.6+.4*S],k),k)return;let M=e?2:2+(o()<.45?1:0);for(let G=0;G<M;G++){let T=e?.5:.75,A=l[0]+(o()-.5)*2*T,_=l[1]+(o()-.2)*T*.9,D=l[2]+(o()-.5)*2*T*(e?.12:1),$=Math.hypot(A,_,D);i(x,[A/$,_/$,D/$],f*.72,p*(.72+o()*.2),u+1)}},r=e?1:2+(o()*2|0);for(let c=0;c<r;c++){let l=o()*6.283,f=e?.15:.45;i([Math.cos(l)*.08,-.1,Math.sin(l)*.08*(e?.2:1)],Vo(Math.cos(l)*f,1,Math.sin(l)*f*(e?.2:1)),e?.05:.085,e?.42:.5,0)}return n.normals()}var Vo=(s,e,o)=>{let n=Math.hypot(s,e,o);return[s/n,e/n,o/n]};function Ye(s,e){let o=Nt(s),n=new Vt,t=e>1?9:14;for(let a=0;a<e;a++){let i=o()*6.283,r=e>1?.22+o()*.25:0,c=Math.cos(i)*r,l=Math.sin(i)*r,f=e>1?.7+o()*.9:1,p=e>1?.2+o()*.1:.62,u=e>1?.25:.05,x=Math.cos(i)*u,v=Math.sin(i)*u,S=e>1?[[.75,-.1,.5,.6],[.9,.3,.7,.8],[1,.75,.9,1],[.95,1,1,1],[.7,.99,.6,.6],[.6,.6,.25,.25],[0,.5,.15,.15]]:[[.45,-.1,.5,.55],[.8,.12,.65,.75],[1,.45,.85,.95],[.97,.75,.95,1],[.8,1,1,1],[.62,.98,.6,.6],[.55,.65,.3,.3],[.42,.35,.18,.2],[0,.3,.12,.15]],g=n.nv,B=o()*6;for(let k=0;k<S.length;k++){let[d,M,G,T]=S[k];for(let A=0;A<t;A++){let _=A/t*6.2832,D=d*p*(1+.07*Math.sin(_*(e>1?3:7)+M*3+B)*(k<5?1:.3));n.vert(c+x*M*f+Math.cos(_)*D,M*f,l+v*M*f+Math.sin(_)*D,G,G,G,.25+.3*G,T)}}for(let k=0;k<S.length-1;k++)for(let d=0;d<t;d++){let M=(d+1)%t,G=g+k*t,T=G+t;n.quad(G+d,T+d,T+M,G+M)}}return n.normals()}function L0(s,e,o){let n=Nt(s),t=new Vt,a=4;for(let i=0;i<e;i++){let r=i/e*6.283+n()*.8,c=.25+n()*(o?.9:.6),l=.6+n()*.5,f=(o?.13:.035)*(.8+n()*.5),p=n(),u=Math.cos(r),x=Math.sin(r),v=-x,S=u,g=n()*.08,B=t.nv;for(let k=0;k<=a;k++){let d=k/a,M=g+c*d*d*l,G=l*d*(1-.25*c*d),T=f*(o?Math.sin(Math.PI*Math.pow(d,.7))*.95+.08:1-d*.85);t.vert(u*M-v*T,G,x*M-S*T,d,p,0,0,.35+.65*d),t.vert(u*M+v*T,G,x*M+S*T,d,p,1,0,.35+.65*d)}for(let k=0;k<a;k++)t.quad(B+k*2,B+k*2+1,B+k*2+3,B+k*2+2)}return t.normals()}function fo(){let s=new Vt,e=20,o=8,n=a=>1.55-1.85*Math.pow(Math.abs(a),1.25),t=a=>-1.45+1.15*Math.pow(Math.abs(a),.75);for(let a=0;a<2;a++){let i=s.nv;for(let r=0;r<=e;r++){let c=r/e*2-1,l=Math.abs(c);for(let f=0;f<=o;f++){let p=f/o,u=n(c)+(t(c)-n(c))*p,x=(.42*Math.pow(1-l,1.6)+.03)*Math.pow(Math.sin(Math.PI*Math.pow(p,.55)),.8),v=a?-x*.55:x;s.vert(c*3.3,v,u,l,a,0,0,a?.7:1)}}for(let r=0;r<e;r++)for(let c=0;c<o;c++){let l=i+r*(o+1)+c,f=l+o+1;a?s.quad(l,l+1,f+1,f):s.quad(l,f,f+1,l+1)}}for(let a of[-1,1])c0(s,[a*.34,0,1.3],[a*.42,-.12,2],.11,.04,4,[0,0,0,0],[0,0,0,0],!0);return c0(s,[0,.02,-1.3],[0,0,-3],.07,.035,4,[0,0,1,0],[0,0,1,0],!1),c0(s,[0,0,-3],[0,0,-5.2],.035,.008,4,[0,0,1,0],[0,0,1,0],!0),s.normals()}function po(){let s=new Vt,e=6,o=[.5,.4,.22,.02,-.18,-.34],n=[.012,.085,.145,.16,.11,.04],t=u=>nt((.25-u)/.85,0,1);for(let u=0;u<o.length;u++)for(let x=0;x<e;x++){let v=x/e*6.2832;s.vert(Math.sin(v)*n[u]*.42,Math.cos(v)*n[u]-.01,o[u],t(o[u]),0,0)}for(let u=0;u<o.length-1;u++)for(let x=0;x<e;x++){let v=u*e+x,S=u*e+(x+1)%e;s.quad(v,v+e,S+e,S)}let a=s.vert(0,0,-.33,t(-.33),0,0),i=s.vert(0,.19,-.62,1,0,0),r=s.vert(0,0,-.5,1,0,0),c=s.vert(0,-.19,-.62,1,0,0);s.tri(a,i,r),s.tri(a,r,c);let l=s.vert(0,.14,.14,t(.14),0,0),f=s.vert(0,.25,-.06,t(-.06),0,0),p=s.vert(0,.11,-.2,t(-.2),0,0);return s.tri(l,f,p),s.normals()}function uo(s){let e=new Float32Array((s+1)*4),o=new Uint16Array(s*6);for(let n=0;n<=s;n++){let t=Math.pow(n/s,.85);e.set([t,-1,t,1],n*4)}for(let n=0;n<s;n++)o.set([n*2,n*2+1,n*2+3,n*2,n*2+3,n*2+2],n*6);return{v:e,i:o}}function ho(s,e){let o=new Float32Array((s+1)*e*2),n=new Uint16Array(s*e*6);for(let a=0;a<=s;a++)for(let i=0;i<e;i++)o.set([a/s,i/e*6.2832],(a*e+i)*2);let t=0;for(let a=0;a<s;a++)for(let i=0;i<e;i++){let r=a*e+i,c=a*e+(i+1)%e;n.set([r,r+e,c+e,r,c+e,c],t),t+=6}return{v:o,i:n}}function vo(s,e,o=1){let n=e.map(i=>i[1]),t=Math.min(...n),a=Math.max(...n);for(let i of[[0,4,6,2],[1,3,7,5],[0,1,5,4],[2,6,7,3],[0,2,3,1],[4,5,7,6]]){let r=i.map(c=>s.vert(e[c][0],e[c][1],e[c][2],o,o,o,0,.6+.4*((e[c][1]-t)/(a-t+1e-6))));s.quad(r[0],r[1],r[2],r[3])}}function ne(s,e,o,n,t,a,i,r,c=.05){let l=[];for(let f=0;f<8;f++)l.push([o+(f&1?.5:-.5)*a*(1+(e()-.5)*c),n+(f&2?.5:-.5)*i*(1+(e()-.5)*c),t+(f&4?.5:-.5)*r*(1+(e()-.5)*c)]);vo(s,l,.9+e()*.1)}function $e(s,e,o,n,t){let a=Nt(s),i=new Vt,r=24,c=a()*50,l=[];o&&l.push([.68,.2,0,0],[.68,.4,0,0]);let f=o?.46:0,p=n?e-.52:e,u=Math.max(2,Math.round((p-f)/.75));for(let S=0;S<=u;S++){let g=f+(p-f)*S/u;l.push([.5*(1-.14*Math.pow(g/6.5,1.5)),g,1,!n&&!t&&S===u?1:0])}n&&l.push([.74,e-.24,0,0]);let x=i.nv;for(let[S,g,B,k]of l)for(let d=0;d<r;d++){let M=d/r*6.2832,G=Math.cos(M),T=Math.sin(M),A=S*(B&&d%2?.93:1)*(1+(Pt(G*1.5+c,g*.9,T*1.5,3)-.5)*.16),_=g-(k?Pt(G*1.7+c,5,T*1.7,2)*Math.min(1.4,e*.35):0);i.vert(G*A,_,T*A,1,1,1,0,.5+.5*Math.min(1,g/1.4)-(n&&g>e-.6?.2:0))}for(let S=0;S<l.length-1;S++)for(let g=0;g<r;g++){let B=(g+1)%r,k=x+S*r,d=k+r;i.quad(k+g,d+g,d+B,k+B)}let v=x+(l.length-1)*r;if(!n){let S=i.vert(0,e-(t?0:.55),0,.8,.8,.8,0,.8);for(let g=0;g<r;g++)i.tri(v+g,S,v+(g+1)%r)}if(t){let S=i.vert(0,0,0,.8,.8,.8,0,.6);for(let g=0;g<r;g++)i.tri(x+(g+1)%r,S,x+g)}return o&&ne(i,a,0,.1,0,1.4,.24,1.4,.03),n&&ne(i,a,0,e-.12,0,1.55,.26,1.55,.03),i.normals()}function l0(s,e,o,n){let t=Nt(s),a=new Vt;return ne(a,t,0,o/2,0,e,o,n,.12),a.normals()}function q0(s,e){let o=Nt(s),n=new Vt,t=.95,a=3.3,i=1,r=1.55,c=2.5,l=r+t/2,f=a+.22,p=f+c;for(let v of[-1,1]){let S=e&&v>0;for(let k=0;k<3;k++)ne(n,o,v*l,a/3*(k+.5),0,t,a/3-.02,i,.05);ne(n,o,v*l,a+.11,0,t+.28,.22,i+.22,.03);let g=S?1:3,B=(p-f)/3;for(let k=0;k<g;k++)ne(n,o,v*(l+.05),f+B*(k+.5),0,t-.1,B-.02,i-.08,.06)}let u=11;for(let v=0;v<u;v++){if(e&&v>=1&&v<=5)continue;let S=Math.PI*v/u+.012,g=Math.PI*(v+1)/u-.012,B=v===5?.14:0,k=[];for(let d=0;d<8;d++){let M=d&1?S:g,G=d&2?c+B+(o()-.5)*.06:r,T=(d&4?.5:-.5)*(i-.06+B);k.push([Math.cos(M)*G,f+Math.sin(M)*G,T])}vo(n,k,.88+o()*.12)}let x=2*l+t+.5;return e?(ne(n,o,-x*.27,p+.3,0,x*.46,.56,i+.25,.05),ne(n,o,-x*.3,p+.68,0,x*.4+.3,.2,i+.55,.04)):(ne(n,o,0,p+.3,0,x,.56,i+.25,.03),ne(n,o,0,p+.68,0,x+.35,.2,i+.55,.03)),n.normals()}var q={start:[2,22],whale:[-4,-16],ship:[82,14],sponge:[50,-74],boulders:[-58,-66],grotA:[-46,44],grotB:[-108,78],temple:[22,31],arcade:[-25,9]},ft={SURF:46,RIM:138,SHRES:4096,grotto:[-77,61,48],flats:[[q.whale[0],q.whale[1],17,3.5],[q.ship[0],q.ship[1],26,2.5],[q.start[0],q.start[1],12,4],[-77,61,30,3],[q.temple[0],q.temple[1],18,4.2],[q.arcade[0],q.arcade[1],12,4]]},Et=[[2,7.5,23,-.15,.25],[58,10,36,.86,.08],[3,7.6,43,1.02,.06],[36,15,-58,.75,-.12],[-36,7,-46,-.95,.5],[-50,7.5,46,-2.07,.12]],Oe=(s,e)=>1-Lt(.5,1,Math.hypot(s-ft.grotto[0],e-ft.grotto[1])/ft.grotto[2]),ae=(s,e,o,n,t)=>Lt(n,t,Math.hypot(s-o[0],e-o[1]));function Xe(s,e,o,n){let t=n[0]-o[0],a=n[1]-o[1],i=nt(((s-o[0])*t+(e-o[1])*a)/(t*t+a*a),0,1);return Math.hypot(s-o[0]-t*i,e-o[1]-a*i)}function Io(){let s=Nt(20251),e=[],o=(v,S,g,B,k,d)=>e.push(v,S,g,0,B,k,d,0),n=(v,S,g,B,k,d,M)=>e.push(v,S,g,M,B,k,d,1),t=(v,S,g,B,k,d,M=1)=>e.push(v,S,g,B,k,d,M,2),a=(v,S,g,B,k,d,M)=>e.push(v,S,g,M,B,k,d,3);o(-12,6,-44,22,27,13),o(-36,5,-36,12,19,12),o(18,4,-56,12,16,11),a(-10,9,-68,-11,8,-30,5.5),t(42,1,8,13.5,3.3,Math.PI/2,1.1),o(43,4,-14,9,17,9),o(45,4,31,10,15,9),o(108,6,-10,17,23,19),o(112,5,34,14,17,15),t(24,1,-34,10,2.7,.3,1.25),n(-30,0,18,-27,27,21,4.8),n(28,0,56,31,22,53,4.2),n(-14,0,70,-16,17,73,5);let i=q.grotA,r=q.grotB,c=Math.hypot(r[0]-i[0],r[1]-i[1]),l=(r[0]-i[0])/c,f=(r[1]-i[1])/c,p=-f,u=l;for(let v=0;v<=5;v++){let S=i[0]+l*v*13.5,g=i[1]+f*v*13.5;for(let B of[-1,1])o(S+p*B*(25+s()*3),8,g+u*B*(25+s()*3),11+s()*3,24+s()*8,11+s()*3)}o(r[0]+l*14,8,r[1]+f*14,19,28,19);let x=Math.atan2(u,p);t(i[0]+l*17,3,i[1]+f*17,17,3.4,x,1.35),t(i[0]+l*50,3,i[1]+f*50,16,3.6,x+.2,1.5);{let v=i[0]+l*34,S=i[1]+f*34;n(v-p*22,30,S-u*22,v+p*22,33,S+u*22,4.2)}o(q.sponge[0],-3,q.sponge[1],27,11,23),t(27,2,-62,11,2.8,.85,1.2),o(78,5,-92,14,22,13),o(30,4,-100,13,18,12);for(let v=0;v<6;v++){let S=v*1.05+.4;o(q.boulders[0]+Math.cos(S)*33,2,q.boulders[1]+Math.sin(S)*33,9+s()*4,7+s()*9,9+s()*4)}o(-24,6,88,17,21,13),o(24,6,96,15,25,13),o(62,6,72,13,19,15);for(let v=0,S=0;v<26&&S<2e3;S++){let g=s()*6.283,B=72+s()*62,k=Math.cos(g)*B,d=Math.sin(g)*B;if(Math.hypot(k,d)<66||Math.hypot(k-q.ship[0],d-q.ship[1])<34||Xe(k,d,i,r)<44||Math.hypot(k-q.sponge[0],d-q.sponge[1])<34||Math.hypot(k-q.boulders[0],d-q.boulders[1])<30)continue;let M=s();o(k,4+s()*5,d,9+M*12+s()*4,12+M*20+s()*8,9+M*12+s()*4),s()<.3&&n(k+8,0,d+6,k+12*(s()-.5),30+s()*10,d+12*(s()-.5),4+s()*2),v++}return new Float32Array(e)}var It=class{constructor(e){this.s=e,this.f=new Float32Array(4096*e),this.u=new Uint32Array(this.f.buffer),this.n=0}add(){if((this.n+1)*this.s>this.f.length){let e=new Float32Array(this.f.length*2);e.set(this.f),this.f=e,this.u=new Uint32Array(e.buffer)}return this.n++*this.s}},f0=(s,e,o,n)=>(nt(n,0,1)*255<<24|nt(o,0,1)*255<<16|nt(e,0,1)*255<<8|nt(s,0,1)*255)>>>0;function p0(s,e,o,n){let{s:t,f:a,u:i,n:r}=s,c=new Int32Array(r),l=new Uint32Array(r);for(let M=0;M<r;M++)c[M]=(Math.floor(a[M*t]/e)+512)*1024+Math.floor(a[M*t+2]/e)+512,l[M]=M;l.sort((M,G)=>c[M]-c[G]||o[M]-o[G]);let f=new Uint32Array(r*t),p=new Float32Array(f.buffer),u=[],x=0,v=1e9,S=1e9,g=1e9,B=-1e9,k=-1e9,d=-1e9;for(let M=0;M<=r;M++)if((M===r||M>0&&c[l[M]]!==c[l[M-1]])&&(M>x&&u.push(v-n[0],S+n[1],g-n[0],B+n[0],k+n[2],d+n[0],x,M-x),x=M,v=S=g=1e9,B=k=d=-1e9),M<r){let G=l[M]*t;for(let D=0;D<t;D++)f[M*t+D]=i[G+D];let T=p[M*t],A=p[M*t+1],_=p[M*t+2];T<v&&(v=T),T>B&&(B=T),A<S&&(S=A),A>k&&(k=A),_<g&&(g=_),_>d&&(d=_)}return{data:f,cells:new Float32Array(u),count:r}}var U0=(s,e)=>{let o=new Float32Array(s);for(let n=0;n<s;n++)o[n]=e();return o};async function mo(s,e,o){let n=co(s,ft),t=Nt(7),a={};await o(.05,"\u041F\u043E\u0434\u043D\u0438\u043C\u0430\u0435\u043C \u0441\u043A\u0430\u043B\u044B \u0441\u043E \u0434\u043D\u0430");let i=e.cell,r=160,c=-8,f=[Math.round(r*2/i)+1,Math.round((58-c)/i)+1,Math.round(r*2/i)+1],p=new Ue(await n([-r,c,-r],i,f,0,Io()),[-r,c,-r],i,f);a.grid=p,await o(.25,"\u041E\u0431\u0442\u0451\u0441\u044B\u0432\u0430\u0435\u043C \u043A\u0430\u043C\u0435\u043D\u044C");let u=i0(p,1.3),x=u.pos,v=u.nrm;await o(.4,"\u0422\u043E\u043F\u0438\u043C \u043A\u043E\u0440\u0430\u0431\u043B\u044C");let S=[{pos:x,nrm:v,idx:u.idx,mat:0}],g=new Float32Array(16),B=(h,y)=>{let w=h.pos,z=h.nrm;for(let L=0;L<h.nv;L++){let C=w[L*3],W=w[L*3+1],E=w[L*3+2],N=z[L*4],V=z[L*4+1],I=z[L*4+2];w[L*3]=g[0]*C+g[4]*W+g[8]*E+g[12],w[L*3+1]=g[1]*C+g[5]*W+g[9]*E+g[13],w[L*3+2]=g[2]*C+g[6]*W+g[10]*E+g[14],z[L*4]=g[0]*N+g[4]*V+g[8]*I,z[L*4+1]=g[1]*N+g[5]*V+g[9]*I,z[L*4+2]=g[2]*N+g[6]*V+g[10]*I}S.push({pos:w,nrm:z,idx:h.idx,mat:y})};{let h=e.cell>.9?.18:.14,y=[-18.2,-4.4,-6.4],w=[Math.ceil(41.4/h),Math.ceil(24.8/h),Math.ceil(12.8/h)],z=i0(new Ue(await n(y,h,w,1,null),y,h,w),.45),L=p.floorY(q.ship[0],q.ship[1]);B0(g,q.ship[0],L+2.3,q.ship[1],2.5,.05,.27,1),a.shipInv=new Float32Array(16),r0(a.shipInv,g),B(z,1)}await o(.5,"\u0421\u0442\u0430\u0432\u0438\u043C \u0445\u0432\u043E\u0441\u0442 \u043A\u0438\u0442\u0430");{let h=e.cell>.9?.2:.16,y=[-14.5,-6.5,-5.5],w=[Math.ceil(29/h),Math.ceil(27.5/h),Math.ceil(11/h)],z=i0(new Ue(await n(y,h,w,2,null),y,h,w),.6),L=p.floorY(q.whale[0],q.whale[1]);B0(g,q.whale[0],L+2.5,q.whale[1],.2,-.12,.05,1.25),B(z,2);for(let C=0;C<z.nv;C++)z.nrm[C*4]*=.8,z.nrm[C*4+1]*=.8,z.nrm[C*4+2]*=.8}{let h=0,y=0;for(let N of S)h+=N.pos.length/3,y+=N.idx.length;let w=new Float32Array(h*3),z=new Float32Array(h*4),L=new Float32Array(h*4),C=new Uint32Array(y),W=0,E=0;for(let N of S){w.set(N.pos,W*3),z.set(N.nrm,W*4);for(let V=0;V<N.pos.length/3;V++)L[(W+V)*4]=N.mat/255;for(let V=0;V<N.idx.length;V++)C[E+V]=N.idx[V]+W;W+=N.pos.length/3,E+=N.idx.length}a.staticVB=F0(w,z,L),a.staticIB=C}await o(.6,"\u0421\u0430\u0436\u0430\u0435\u043C \u0432\u043E\u0434\u043E\u0440\u043E\u0441\u043B\u0438");let k=u.nv,d=ft.RIM-4,M=e.density,G=(h,y)=>{let w=p.floorY(h,y);return w-p.sd(h,w,y)*.8},T=[],A=(h,y,w)=>{let z=G(h,y);z<22&&T.length<16&&T.push([h,z+.4,y,w])};for(let h of[[8,13,6.5],[-6,6,5.5],[3,-4,5],[14,40,5.5],[37,33,5],[-18,2,5],[-32,16,4.5]])A(...h);for(let h=0;T.length<16&&h<600;h++){let y=t()*6.283,w=30+t()*82,z=Math.cos(y)*w,L=Math.sin(y)*w;Math.hypot(z-q.sponge[0],L-q.sponge[1])<30||Math.hypot(z-q.ship[0],L-q.ship[1])<16||T.some(C=>Math.hypot(z-C[0],L-C[2])<28)||A(z,L,4+t()*4.5)}a.lava=new Float32Array(64);for(let h=0;h<16;h++)a.lava.set(T[h]||[0,-1e3,0,1],h*4);let _=(h,y)=>{let w=-9;for(let z of T){let L=Math.hypot(h-z[0],y-z[2])/z[3];w=Math.max(w,1-L*L)}return w},D=new It(9),$=new It(8),K=new It(8),Q=(h,y)=>{let w=Math.hypot(h,y),z=Lt(.4,.56,Pt(h*.014+3,0,y*.014+7,3))*.85+.55*(1-Lt(25,70,w));return z*=ae(h,y,q.whale,12,20)*ae(h,y,q.ship,15,26)*ae(h,y,q.start,5,11)*ae(h,y,q.sponge,14,26)*ae(h,y,q.boulders,8,30),z*=Lt(4.5,9,Xe(h,y,q.start,q.whale)),z*=ae(h,y,q.temple,14,21)*ae(h,y,q.arcade,8,14),z*=1-.8*Oe(h,y),Math.min(z,1)*Lt(d,d-20,w)},st=(h,y,w,z,L)=>{let C=G(h,y);if(C>17||_(h,y)>-.7)return;let W=Math.min(p.ceilY(h,C,y)-2.5,ft.SURF-.3),E=Math.min(w,W-C);if(E<w*.4||E<2.5)return;let N=$.n,V=D.n,I=K.n,R=t(),et=Oe(h,y)>.45?1:0,J=t();for(let bt=0;bt<z;bt++){let kt=(bt+t()*.5)/z,Bt=$.add();$.f.set([h,C-.3,y,R,E+.3,kt,.05+.02*z,et],Bt);for(let Jt=.8+t();Jt<E;Jt+=(.05+t()*.075)/L){let ct=Jt/E,ut=(.9+t()*1.1)*(.55+.45*Math.sin(Math.PI*Math.min(1,ct*1.15+.08)))*(w<10?.6:1);Bt=D.add(),D.f.set([h,C-.3,y,R,Jt+.3,t()*6.283,ut,E],Bt),D.u[Bt+8]=f0(nt(J*.5+t()*.6,0,1),et,t(),kt)}}let vt=Math.round(E*4.5*Math.sqrt(M)*(et?1.5:1)*(w<10?.4:1));for(let bt=0;bt<vt;bt++){let kt=K.add();K.f.set([h,C,y,R,1+t()*(E-1),.4+t()*t()*3.2,t()*6.283,t()],kt)}Xe(h,y,H,ht)<6.5&&($.n=N,D.n=V,K.n=I)},H=[Et[5][0],Et[5][2]],ht=[H[0]+Math.sin(Et[5][3])*22,H[1]-Math.cos(Et[5][3])*22];for(let h=-d;h<d;h+=6.5)for(let y=-d;y<d;y+=6.5){let w=h+t()*6.5,z=y+t()*6.5;t()<Q(w,z)&&st(w,z,20+t()*24,2+(t()*2.4|0),M)}for(let h=-d;h<d;h+=3.6)for(let y=-d;y<d;y+=3.6){let w=h+t()*3.6,z=y+t()*3.6;t()<Q(w,z)*.3+.03*Lt(d,d-20,Math.hypot(w,z))&&st(w,z,2.5+t()*t()*9,1,M)}for(let h=0;h<26;h++){let y=t(),w=q.grotA[0]+(q.grotB[0]-q.grotA[0])*y+(t()-.5)*18,z=q.grotA[1]+(q.grotB[1]-q.grotA[1])*y+(t()-.5)*18;st(w,z,12+t()*22,2,M)}a.leaves=p0(D,40,U0(D.n,t),[9,-1,0]);for(let h=5;h<a.leaves.cells.length;h+=8)a.leaves.cells[h-1]=ft.SURF+1;a.stipes={data:$.u.subarray(0,$.n*8),count:$.n},a.sparks={data:K.u.subarray(0,K.n*8),count:K.n},a.leafMesh=uo(e.leafSegs),a.stipeMesh=ho(26,4),await o(.72,"\u0421\u0442\u0435\u043B\u0435\u043C \u043A\u043E\u0432\u0451\u0440");let At=new It(5),_t=new It(5),Dt=[[.7,.08,.5],[.75,.2,.4],[.4,.15,.75],[.05,.3,.27],[.1,.24,.5],[.12,.27,.07],[.8,.16,.85]],ie=(h,y,w,z)=>{let L=Pt(h*.045+31,0,w*.045+5,3),C=Pt(h*.05+77,0,w*.05+41,3),W=Math.max(Lt(.5,.6,L),Lt(.52,.62,C)*.8,z*.95,.04);if(t()>W*(z>.2?1:.4)||_(h,w)>-1.2)return;let E=z>.3?t()<.6?0:t()<.5?6:1:L>C?t()<.7?0:t()<.5?1:2:t()<.6?3:t()<.6?4:5;t()<.06&&(E=t()*Dt.length|0);let N=Dt[E],V=z>.3&&Pt(h*.11,3,w*.11,2)>.58&&t()<.5,I=V?_t:At,R=I.add(),et=.75+t()*.5;I.f.set([h,y-.05,w,(V?.32:.28)+t()*t()*.6],R),I.u[R+4]=f0(N[0]*et,N[1]*et,N[2]*et,t())},jt=.36/Math.sqrt(M);for(let h=-d;h<d;h+=jt)for(let y=-d;y<d;y+=jt){let w=h+t()*jt,z=y+t()*jt;if(w*w+z*z>d*d)continue;let L=Oe(w,z);if(L<.05&&Pt(w*.045+31,0,z*.045+5,3)<.47&&Pt(w*.05+77,0,z*.05+41,3)<.49&&t()>.06)continue;let C=p.floorY(w,z);C>26||Math.abs(p.floorY(w+.5,z+.3)-C)>.7||ie(w,C-p.sd(w,C,z)*.8,z,L)}for(let h=0;h<6e4*M;h++){let y=t()*k|0;v[y*4+1]<.78||x[y*3+1]<9||x[y*3+1]>ft.SURF-3||ie(x[y*3]+(t()-.5)*i,x[y*3+1],x[y*3+2]+(t()-.5)*i,Oe(x[y*3],x[y*3+2]))}a.grass=[p0(At,32,U0(At.n,t),[1.5,-.5,1.5]),p0(_t,32,U0(_t.n,t),[1.5,-.5,1.5])],a.grassMeshes=He([L0(11,9,!1),L0(12,6,!0)]),await o(.82,"\u0420\u0430\u0441\u0442\u0438\u043C \u043A\u043E\u0440\u0430\u043B\u043B\u044B");let ce=[Pe(1,1),Pe(2,1),Pe(3,2),Pe(4,2),Pe(5,3),Pe(6,3),Re(21),Re(22),Re(23),Re(24,1),Re(25,1),Ye(31,1),Ye(32,1),Ye(33,4),Ye(34,6),$e(41,6.5,!0,!0),$e(42,4.3,!0,!1),$e(43,1.9,!0,!1),$e(44,1,!1,!1,!0),l0(45,1.2,.8,.9),l0(46,4.7,.7,.95),l0(47,2.6,.3,1.6),q0(48,!1),q0(49,!0)],le=15;a.ruinStart=le;let lt=ce.map(()=>new It(9)),at=(h,y,w,z,L,C,W,E,N,V,I,R=0,et=t()*6.283)=>{let J=lt[h],vt=J.add();J.f[vt]=y,J.f[vt+1]=w,J.f[vt+2]=z,J.f[vt+3]=L,io(J.f,vt+4,C,W,E,et),J.u[vt+8]=f0(N,V,I,R)},xt=()=>{let h=t()*6.283,y=t()*2-1,w=Math.sqrt(1-y*y);return[w*Math.cos(h),y,w*Math.sin(h)]};for(let h=0;h<6e4*M;h++){let y=t()*k|0,w=x[y*3],z=x[y*3+1],L=x[y*3+2],C=v[y*4+1];if(z>ft.SURF-2)continue;let W=Pt(w*.03+9,z*.03,L*.03,2)>.55&&C>-.1;if(!W&&C<.45)continue;let E=t(),N=W&&E<.22?.9+t()*t()*3.2:.1+t()*t()*.6,V=xt(),I=.4+t()*.25,R=N>1.6?4+(t()*2|0):N>.45?2+(t()*2|0):t()*2|0;at(R,w+(t()-.5)*i,z-N*.25,L+(t()-.5)*i,N,V[0],V[1],V[2],I,I,I)}let wt=(h,y,w,z,L)=>{for(let C=0;C<z;C++){let W=t()*6.283,E=Math.sqrt(t())*w,N=h+Math.cos(W)*E,V=y+Math.sin(W)*E,I=L?.8+t()*t()*t()*5.5:.12+t()*.4,R=p.floorY(N,V),et=Math.min(R+11+t()*24,ft.SURF-3-I);if(p.sd(N,et,V)<I+1.5||Xe(N,V,q.start,q.whale)<16||Math.hypot(N-q.ship[0],V-q.ship[1])<20)continue;let J=xt(),vt=.42+t()*.2;at(I>1.6?4+(t()*2|0):2+(t()*2|0),N,et,V,I,J[0],J[1],J[2],vt,vt,vt,1)}};wt(q.boulders[0],q.boulders[1],30,60,!0),wt(q.boulders[0],q.boulders[1],32,160,!1),wt(0,0,120,40,!0);let j=[[1,.42,.58],[.86,.8,1],[1,.55,.22],[.62,.36,1],[.96,.85,.3],[.28,.9,.8],[1,.25,.75]];for(let h=0;h<11e4*M;h++){let y=t()*k|0,w=x[y*3],z=x[y*3+1],L=x[y*3+2],C=v[y*4],W=v[y*4+1],E=v[y*4+2];if(W<.1||z>ft.SURF-4||_(w,L)>-.3)continue;let N=Oe(w,L),V=Lt(.5,.6,Pt(w*.028+50,z*.05,L*.028+13,3)),I=Math.max(V*.5,N*.45,(1-ae(w,L,q.sponge,20,34))*.5,(1-ae(w,L,q.whale,12,22))*.3,.03);if(t()>I)continue;let R=t()<(W<.7?.6:.2),et=R?9+(t()*2|0):6+(t()*3|0),J=j[t()*j.length|0];N>.3&&t()<.6&&(J=j[t()<.5?6:0]);let vt=C*.6,bt=W*.6+.5,kt=E*.6,Bt=1/Math.hypot(vt,bt,kt),Jt=(R?.5:.3)+t()*t()*.8;at(et,w,z-.05,L,Jt,vt*Bt,bt*Bt,kt*Bt,J[0],J[1],J[2])}let he=[[.95,.42,.18],[.9,.22,.2],[.6,.28,.85],[1,.75,.15],[.3,.5,1],[1,.35,.6]];for(let h=0;h<7e4*M;h++){let y=t()*k|0,w=x[y*3],z=x[y*3+1],L=x[y*3+2];if(v[y*4+1]<.5||z>ft.SURF-5||_(w,L)>-.3)continue;let W=Math.max((1-ae(w,L,q.sponge,18,30))*.5,Lt(.56,.66,Pt(w*.03+150,0,L*.03+90,3))*.2,Oe(w,L)*.1,.004);if(t()>W)continue;let E=t()<.5,N=E?11+(t()*2|0):13+(t()*2|0),V=he[t()*6|0],I=E?.35+t()*t()*1.5:.4+t()*.8;at(N,w,z-.05,L,I,v[y*4]*.3,1,v[y*4+2]*.3,V[0],V[1],V[2])}let zt=(h,y,w,z,L,C,W=0,E=1,N=0)=>{let V=1/Math.hypot(W,E,N),I=.8+t()*.2;at(le+h,y,w,z,L,W*V,E*V,N*V,I,I*.97,I*.9,.5,C)},pt=h=>(t()-.5)*.08*h,Ge=(h,y,w,z,L)=>{if(L<.48)return zt(0,h,w,y,z,t()*6.283,pt(1),1,pt(1)),w+6.5*z;if(L<.7)zt(1,h,w,y,z,t()*6.283,pt(2),1,pt(2));else if(zt(2,h,w,y,z,t()*6.283,pt(3),1,pt(3)),L>.84){let C=t()*6.283,W=Math.cos(C),E=Math.sin(C);for(let N=0;N<5;N++){let V=h+W*(1.7+N*1.15)*z+(t()-.5)*.4,I=y+E*(1.7+N*1.15)*z+(t()-.5)*.4;t()<.8&&zt(3,V,G(V,I)+.4*z,I,z,t()*6.283,W+(t()-.5)*.3,.04+t()*.12,E+(t()-.5)*.3)}}return 0},ge=(h,y,w,z,L,C,W)=>{let E=[];for(let I=0;I<L;I++)E.push([h+w*I*4.4*C,y+z*I*4.4*C]);let N=Math.min(...E.map(I=>G(I[0],I[1])))-.15,V=E.map(I=>Ge(I[0],I[1],N,C,t()<W?0:.48+t()*.52));for(let I=0;I+1<L;I++)V[I]&&V[I+1]&&t()<.75&&zt(5,(E[I][0]+E[I+1][0])/2,V[I]-.03,(E[I][1]+E[I+1][1])/2,C,Math.atan2(-z,w),pt(.5),1,pt(.5));return N},Te=(h,y,w,z,L)=>{for(let C=0;C<z;C++){let W=t()*6.283,E=Math.sqrt(t())*w,N=h+Math.cos(W)*E,V=y+Math.sin(W)*E,I=G(N,V),R=t(),et=L*(.7+t()*.6);I>20||(R<.45?zt(4,N,I-.25*et,V,et,t()*6.283,pt(9),1,pt(9)):R<.62?zt(6,N,I-.1*et,V,et,t()*6.283,pt(5),1,pt(5)):R<.8?zt(3,N,I+.36*et,V,et,t()*6.283,t()-.5,.1*t(),t()-.5):R<.9?zt(2,N,I-.2,V,et,t()*6.283,pt(4),1,pt(4)):zt(5,N,I-.2*et,V,et,t()*6.283,pt(4),1,pt(4)))}};{let h=q.start,y=q.whale,w=Math.hypot(y[0]-h[0],y[1]-h[1]),z=(y[0]-h[0])/w,L=(y[1]-h[1])/w;for(let ct of[-1,1])ge(h[0]+z*5-L*7.5*ct,h[1]+L*5+z*7.5*ct,z,L,6,1,.55);Te(h[0]+z*14,h[1]+L*14,15,46,1);let C=q.temple,W=.45,E=Math.cos(W),N=Math.sin(W),V=1.05,I=4.4*V,R=(ct,ut)=>[C[0]+ct*E+ut*N,C[1]-ct*N+ut*E],et=1e9;for(let ct of[-1,1]){let ut=R(-2*I,ct*I);et=Math.min(et,ge(ut[0],ut[1],E,-N,5,V,.6))}for(let ct of[-2,2]){let ut=R(ct*I,0);Ge(ut[0],ut[1],et,V,t()<.5?.6:0)}for(let ct=-11.5;ct<=11.5;ct+=2.75)for(let ut=-6.6;ut<=6.6;ut+=1.72){if(t()<.22)continue;let Ht=R(ct*V+(t()-.5)*.15,ut*V+(t()-.5)*.15);zt(6,Ht[0],Math.max(G(Ht[0],Ht[1])-.22,et-.2),Ht[1],V,W+(t()-.5)*.06,pt(1),1,pt(1))}for(let ct of[-1.9,1.9])for(let ut=-6;ut<=6;ut+=1.25){let Ht=Math.floor(Pt(ut*.35+9,ct,3,2)*6-.6),we=R(ut*V,ct*V);for(let Ot=0;Ot<Ht;Ot++)zt(4,we[0],et+.25+Ot*.8*V,we[1],V,W+(t()-.5)*.08)}Te(C[0],C[1],19,60,1);let J=q.arcade,vt=1.15,bt=Math.cos(vt),kt=Math.sin(vt),Bt=1.45,Jt=Math.min(G(J[0],J[1]),G(J[0]+bt*6,J[1]-kt*6),G(J[0]-bt*6,J[1]+kt*6))-.2;for(let ct=-1;ct<=1;ct++)zt(ct===0?7:8,J[0]+bt*ct*4.04*Bt,Jt,J[1]-kt*ct*4.04*Bt,Bt,vt+(ct>0?Math.PI:0),pt(.6),1,pt(.6));Te(J[0],J[1],13,40,1),ge(J[0]+kt*7-bt*7,J[1]+bt*7+kt*7,bt,-kt,4,.9,.4);for(let ct=0,ut=0;ct<16&&ut<300;ut++){let Ht=t()*6.283,we=28+t()*88,Ot=Math.cos(Ht)*we,te=Math.sin(Ht)*we;if(G(Ot,te)>11||Xe(Ot,te,q.grotA,q.grotB)<20)continue;let ee=t()*6.283,Me=2+(t()*4|0),Ve=.8+t()*.5;ge(Ot,te,Math.cos(ee),Math.sin(ee),Me,Ve,.35),t()<.4&&zt(t()<.5?7:8,Ot+Math.sin(ee)*7,G(Ot+Math.sin(ee)*7,te-Math.cos(ee)*7)-.3,te-Math.cos(ee)*7,1+t()*.5,t()*6.283,pt(1.5),1,pt(1.5)),Te(Ot+Math.cos(ee)*Me*2,te+Math.sin(ee)*Me*2,9+Me*2,14+Me*4,Ve),ct++}}a.propMeshes=He(ce),a.props=lt.map(h=>{let y=new Float32Array(h.n);for(let w=0;w<h.n;w++)y[w]=-h.f[w*9+3];return p0(h,40,y,[6,-6,6])}),await o(.93,"\u0412\u044B\u043F\u0443\u0441\u043A\u0430\u0435\u043C \u0440\u044B\u0431");let Zt=new It(9),Ne=[[.42,.58,.72],[.95,.78,.22],[1,.5,.18],[.3,.75,.8],[.7,.75,.8]],Wt=(h,y,w,z,L)=>{let C=p.floorY(h,y),W=Math.min(C+w,ft.SURF-6),E=t(),N=Ne[t()*Ne.length|0],V=t()<.5?-1:1;for(let I=0;I<L;I++){let R=z*(.35+.65*Math.sqrt(t())),et=Zt.add();Zt.f.set([h,W,y,E,R,(t()-.5)*z*.8,V*(1.2+t()*.6)/R,t()*6.283],et);let J=.8+t()*.4;Zt.u[et+8]=f0(N[0]*J,N[1]*J,N[2]*J,t())}};Wt(q.whale[0]+17,q.whale[1]+8,12,6,200),Wt(q.ship[0]-4,q.ship[1]+5,9,6,220),Wt(q.start[0]+9,q.start[1]-16,8,4,140),Wt(q.grotA[0]-8,q.grotA[1]+5,12,5,200),Wt(q.sponge[0],q.sponge[1],9,6,200),Wt(q.boulders[0],q.boulders[1],16,8,220);for(let h=0;h<12;h++){let y=t()*6.283,w=20+t()*95;Wt(Math.cos(y)*w,Math.sin(y)*w,6+t()*14,3+t()*5,120+(t()*120|0))}a.fish={data:Zt.u.subarray(0,Zt.n*9),count:Zt.n},a.fishMesh=He([po()]),a.mantas={count:6,data:new Float32Array([0,30,-6,36,.05,.4,1.3,0,-8,24,-18,21,-.075,2,1,0,14,35,20,48,.04,3.6,1.5,0,q.ship[0],26,q.ship[1],24,-.06,1,1.1,0,q.boulders[0],33,q.boulders[1],26,.055,5,1.2,0,-20,38,40,60,-.035,4.4,1.6,0])},a.mantaMesh=He([fo()]);let ve=new It(8);for(let h=0;h<60;h++){let y=t()*6.283,w=Math.sqrt(t())*115,z=T[h%32],L=z?z[0]+(t()-.5)*z[3]:Math.cos(y)*w,C=z?z[2]+(t()-.5)*z[3]:Math.sin(y)*w,W=p.floorY(L,C);if(!(W>30))for(let E=0;E<34;E++){let N=ve.add();ve.f.set([L+(t()-.5)*.6,W,C+(t()-.5)*.6,t(),1.3+t()*1.4,.025+t()*t()*.09,.3+t()*.6,0],N)}}a.bubbles={data:ve.u.subarray(0,ve.n*8),count:ve.n};let Ae=new Float32Array(Math.round(22e3*M)*4);for(let h=0;h<Ae.length;h++)Ae[h]=t();a.snow={data:Ae,count:Ae.length/4};let me=new It(8),be=new It(8);for(let h of T){for(let y=0;y<3;y++){let w=t()*6.283,z=t()*h[3]*.6,L=h[0]+Math.cos(w)*z,C=h[2]+Math.sin(w)*z,W=11+t()*10;for(let E=0;E<22;E++){let N=me.add();me.f.set([L,h[1],C,t(),.55+t()*.35,h[3]*(.26+t()*.12),.7+t()*.8,W],N)}}for(let y=0;y<90;y++){let w=be.add();be.f.set([h[0],h[1]-.2,h[2],t(),.35+t()*.7,h[3]*.95,2.5+t()*7,t()],w)}}return a.plumes={data:me.u.subarray(0,me.n*8),count:me.n},a.embers={data:be.u.subarray(0,be.n*8),count:be.n},a.stats={terrainTris:u.idx.length/3,staticTris:a.staticIB.length/3,leaves:D.n,grass:At.n+_t.n,props:lt.reduce((h,y)=>h+y.n,0),fish:Zt.n,sparks:K.n},a}var u0=class{constructor(){this.ctx=null,this.on=!0,this.nextWhale=6,this.nextChime=2,this.nextBubble=1,this.nextCrackle=0,this.helmet=-1,this.lavaLevel=-1}start(){if(this.ctx){this.ctx.resume();return}let e=window.AudioContext||window.webkitAudioContext;if(!e)return;let o=this.ctx=new e,n=this.master=o.createGain(),t=this.hf=o.createBiquadFilter(),a=this.direct=o.createGain();n.gain.value=0,n.gain.setTargetAtTime(.85,o.currentTime,1.5),t.type="lowpass",t.frequency.value=18e3,n.connect(t),t.connect(o.destination),a.connect(o.destination);let i=o.createDelay(1),r=o.createGain(),c=o.createBiquadFilter(),l=this.wet=o.createGain();i.delayTime.value=.47,r.gain.value=.55,c.type="lowpass",c.frequency.value=1400,l.connect(i),i.connect(c),c.connect(r),r.connect(i),c.connect(n),l.connect(n);let f=o.sampleRate*6,p=o.createBuffer(2,f,o.sampleRate);for(let K=0;K<2;K++){let Q=p.getChannelData(K),st=0;for(let H=0;H<f;H++)st=(st+(Math.random()*2-1)*.02)/1.02,Q[H]=st*3.5;for(let H=0;H<4e3;H++){let ht=H/4e3;Q[H]=Q[H]*ht+Q[f-4e3+H]*(1-ht)}}let u=o.createBufferSource();u.buffer=p,u.loop=!0,u.loopEnd=(f-4e3)/o.sampleRate;let x=o.createBiquadFilter();x.type="lowpass",x.frequency.value=130;let v=o.createGain();v.gain.value=.9,u.connect(x),x.connect(v),v.connect(n);let S=o.createBiquadFilter();S.type="bandpass",S.frequency.value=480,S.Q.value=.6;let g=o.createGain();g.gain.value=.06;let B=o.createOscillator(),k=o.createGain();B.frequency.value=.07,k.gain.value=.04,B.connect(k),k.connect(g.gain),B.start(),u.connect(S),S.connect(g),g.connect(n);let d=o.createBiquadFilter();d.type="bandpass",d.frequency.value=75,d.Q.value=.7;let M=this.lava=o.createGain();M.gain.value=0;let G=o.createOscillator(),T=o.createGain();G.frequency.value=.9,T.gain.value=.35;let A=o.createGain();A.gain.value=1,G.connect(T),T.connect(A.gain),G.start(),u.connect(d),d.connect(A),A.connect(M),M.connect(n),u.start();let _=o.sampleRate*2,D=this.white=o.createBuffer(1,_,o.sampleRate),$=D.getChannelData(0);for(let K=0;K<_;K++)$[K]=Math.random()*2-1;for(let[K,Q]of[[55,.05],[82.4,.03],[110.3,.018]]){let st=o.createOscillator(),H=o.createGain();st.frequency.value=K,H.gain.value=Q;let ht=o.createOscillator(),At=o.createGain();ht.frequency.value=.03+Math.random()*.05,At.gain.value=Q*.6,ht.connect(At),At.connect(H.gain),ht.start(),st.connect(H),H.connect(n),st.start()}}toggle(){this.on=!this.on,this.ctx&&(this.master.gain.setTargetAtTime(this.on?.85:0,this.ctx.currentTime,.15),this.direct.gain.setTargetAtTime(this.on?1:0,this.ctx.currentTime,.15))}voice(e,o,n,t,a,i,r,c=0,l=this.wet){let f=this.ctx,p=f.currentTime+c,u=f.createOscillator(),x=f.createGain();if(u.type=e,u.frequency.setValueAtTime(o,p),u.frequency.exponentialRampToValueAtTime(n,p+t),r){let v=f.createOscillator(),S=f.createGain();v.frequency.value=5,S.gain.value=r,v.connect(S),S.connect(u.frequency),v.start(p),v.stop(p+t)}x.gain.setValueAtTime(0,p),x.gain.linearRampToValueAtTime(a,p+i),x.gain.exponentialRampToValueAtTime(1e-4,p+t),u.connect(x),x.connect(l),u.start(p),u.stop(p+t+.05)}burst(e,o,n,t,a,i,r,c=e*.35){let l=this.ctx,f=l.currentTime,p=l.createBufferSource(),u=l.createBiquadFilter(),x=l.createGain();p.buffer=this.white,p.loop=!0,u.type=o,u.Q.value=a,u.frequency.setValueAtTime(n,f),u.frequency.exponentialRampToValueAtTime(t,f+e),x.gain.setValueAtTime(0,f),x.gain.linearRampToValueAtTime(i,f+c),x.gain.linearRampToValueAtTime(0,f+e),p.connect(u),u.connect(x),x.connect(r),p.start(f,Math.random()*1.5),p.stop(f+e+.05)}breath(e){let o=this.ctx;if(!(!o||o.state!=="running"||!this.on))if(e===0)this.burst(1.9,"bandpass",620,1500,.8,.11,this.direct);else{this.burst(2.1,"lowpass",950,360,.5,.09,this.direct,.3);for(let n=0;n<10;n++){let t=170+Math.random()*260;this.voice("sine",t,t*1.9,.07,.035,.008,0,.2+Math.random()*1.5,this.direct)}}}update(e,o,n=0,t=0){let a=this.ctx;if(!a||a.state!=="running"||!this.on)return;let i=a.currentTime,r=t>.5?1:0;r!==this.helmet&&(this.helmet=r,this.hf.frequency.setTargetAtTime(r?1700:18e3,i,.3));let c=Math.round(Math.min(Math.max(n,0),1)*20)/20;if(c!==this.lavaLevel&&(this.lavaLevel=c,this.lava.gain.setTargetAtTime(c*2.2,i,.4)),n>.08&&i>this.nextCrackle&&(this.nextCrackle=i+(.04+Math.random()*.35)/n,this.burst(.03+Math.random()*.05,"highpass",1500+Math.random()*2500,1200,.7,.06*n*(.4+Math.random()),this.master,.004)),i>this.nextWhale){this.nextWhale=i+12+Math.random()*20;let l=150+Math.random()*170,f=Math.random()<.6;this.voice("sine",l,l*(f?1.5+Math.random()*.5:.62),2.4+Math.random()*1.8,.07,.7,4),Math.random()<.5&&this.voice("sine",l*1.9,l*1.3,1.6,.03,.4,6,1.5)}if(i>this.nextChime){this.nextChime=i+2.5+Math.random()*6;let l=[0,3,5,7,10,12,15,17],f=l[Math.random()*l.length|0],p=392*Math.pow(2,f/12)*(Math.random()<.3?2:1);this.voice("sine",p,p*.995,3.5,.018,.02,0)}if(i>this.nextBubble){this.nextBubble=i+.3+Math.random()*2.2;let l=300+Math.random()*500,f=Math.max(.3,1-(o-e.y)/80);this.voice("sine",l,l*2.6,.09+Math.random()*.06,.02*f,.01,0)}}};var Ut=s=>document.getElementById(s),Ce=new URLSearchParams(location.search),xo={low:{cell:1.25,density:.35,leafSegs:4,msaa:1,scale:.75,shres:2048,shadowEvery:3,rays:!0},medium:{cell:1,density:.65,leafSegs:5,msaa:4,scale:1,shres:2048,shadowEvery:2,rays:!0},high:{cell:.8,density:1,leafSegs:6,msaa:4,scale:1,shres:4096,shadowEvery:2,rays:!0}},bo=Ce.get("q")||localStorage.getItem("ocean-q")||((navigator.deviceMemory||8)<=4?"low":"high"),re=xo[bo]||xo.high,h0=Ce.get("shot"),yo=Ce.has("t")?+Ce.get("t"):null,Eo=1,_o=1,Do=.07,go=64*Math.PI/180,jo=.25,Wo=1400,qt=Ut("c"),v0=s=>{Ut("status").textContent=s,document.body.classList.add("err"),console.error(s)};async function Ho(){if(!navigator.gpu)return v0("\u041D\u0443\u0436\u0435\u043D \u0431\u0440\u0430\u0443\u0437\u0435\u0440 \u0441 WebGPU (\u0441\u0432\u0435\u0436\u0438\u0439 Chrome \u0438\u043B\u0438 Edge).");let s=await navigator.gpu.requestAdapter({powerPreference:"high-performance"});if(!s)return v0("WebGPU-\u0430\u0434\u0430\u043F\u0442\u0435\u0440 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D.");let e=await s.requestDevice({requiredLimits:{maxBufferSize:Math.min(s.limits.maxBufferSize,1<<30),maxStorageBufferBindingSize:Math.min(s.limits.maxStorageBufferBindingSize,1<<30)}});e.addEventListener("uncapturederror",m=>console.error("GPU: "+m.error.message)),e.lost.then(m=>v0("\u0413\u0440\u0430\u0444\u0438\u0447\u0435\u0441\u043A\u043E\u0435 \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u043E \u043F\u043E\u0442\u0435\u0440\u044F\u043D\u043E: "+m.message));let o=qt.getContext("webgpu"),n=navigator.gpu.getPreferredCanvasFormat();o.configure({device:e,format:n,alphaMode:"opaque"}),ft.SHRES=re.shres;let t=(m,P)=>(Ut("bar").style.transform=`scaleX(${m})`,Ut("status").textContent=P,new Promise(U=>setTimeout(U,16)));await t(.02,"\u041D\u0430\u043B\u0438\u0432\u0430\u0435\u043C \u0432\u043E\u0434\u0443");let a="rgba16float",i="depth32float",r=re.msaa,c=async(m,P)=>{let U=e.createShaderModule({label:m,code:P}),F=await U.getCompilationInfo();for(let X of F.messages)X.type==="error"&&console.error(`WGSL ${m}:${X.lineNum}:${X.linePos} ${X.message}
+> ${P.split(`
+`)[X.lineNum-1]}`);return U},l=eo(ft),f=await c("scene",l+oo),p=await c("post",l+so(r)),u=await c("blit",no),x=GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,v=GPUShaderStage.FRAGMENT,S=e.createBindGroupLayout({entries:[{binding:0,visibility:x,buffer:{}},{binding:1,visibility:x,texture:{sampleType:"depth"}},{binding:2,visibility:x,sampler:{type:"comparison"}},{binding:3,visibility:v,texture:{viewDimension:"3d"}},{binding:4,visibility:v,sampler:{}},{binding:5,visibility:v,texture:{}},{binding:6,visibility:v,texture:{}}]}),g=e.createBindGroupLayout({entries:[{binding:0,visibility:GPUShaderStage.VERTEX,buffer:{}}]}),B=e.createBindGroupLayout({entries:[{binding:0,visibility:v,texture:{sampleType:"depth",multisampled:r>1}}]}),k=e.createBindGroupLayout({entries:[{binding:1,visibility:v,texture:{}},{binding:2,visibility:v,texture:{}},{binding:3,visibility:v,texture:{}},{binding:4,visibility:v,sampler:{}}]}),d=e.createBindGroupLayout({entries:[{binding:0,visibility:v,texture:{}},{binding:1,visibility:v,sampler:{}},{binding:2,visibility:v,buffer:{}}]}),M=e.createPipelineLayout({bindGroupLayouts:[S]}),G=e.createPipelineLayout({bindGroupLayouts:[g]}),T=(m,P,U)=>({shaderLocation:m,offset:P,format:U}),A={mesh:{arrayStride:20,attributes:[T(0,0,"float32x3"),T(1,12,"snorm8x4"),T(2,16,"unorm8x4")]},uv:{arrayStride:8,attributes:[T(0,0,"float32x2")]},leaf:{arrayStride:36,stepMode:"instance",attributes:[T(1,0,"float32x4"),T(2,16,"float32x4"),T(3,32,"unorm8x4")]},stipe:{arrayStride:32,stepMode:"instance",attributes:[T(1,0,"float32x4"),T(2,16,"float32x4")]},prop:{arrayStride:36,stepMode:"instance",attributes:[T(3,0,"float32x4"),T(4,16,"float32x4"),T(5,32,"unorm8x4")]},grass:{arrayStride:20,stepMode:"instance",attributes:[T(3,0,"float32x4"),T(4,16,"unorm8x4")]},manta:{arrayStride:32,stepMode:"instance",attributes:[T(3,0,"float32x4"),T(4,16,"float32x4")]},p2:{arrayStride:32,stepMode:"instance",attributes:[T(0,0,"float32x4"),T(1,16,"float32x4")]},p1:{arrayStride:16,stepMode:"instance",attributes:[T(0,0,"float32x4")]}},_={color:{srcFactor:"one",dstFactor:"one"},alpha:{srcFactor:"zero",dstFactor:"one"}},D={color:{srcFactor:"one",dstFactor:"one-minus-src-alpha"},alpha:{srcFactor:"zero",dstFactor:"one"}},$=(m,P,U,F={})=>e.createRenderPipeline({label:m,layout:M,vertex:{module:f,entryPoint:m,buffers:U},fragment:{module:f,entryPoint:P,targets:[{format:a,blend:F.blend}]},primitive:{topology:"triangle-list",cullMode:F.cull||"none"},depthStencil:{format:i,depthWriteEnabled:F.write!==!1,depthCompare:F.compare||"less"},multisample:{count:r}}),K=(m,P,U="none")=>e.createRenderPipeline({label:m+"-shadow",layout:G,vertex:{module:f,entryPoint:m,buffers:P},primitive:{topology:"triangle-list",cullMode:U},depthStencil:{format:i,depthWriteEnabled:!0,depthCompare:"less",depthBias:2,depthBiasSlopeScale:2}}),Q={sky:$("vsSky","fsSky",[],{write:!1,compare:"always"}),stat:$("vsStatic","fsStatic",[A.mesh],{cull:"back"}),prop:$("vsProp","fsProp",[A.mesh,A.prop],{cull:"back"}),grass:$("vsGrass","fsGrass",[A.mesh,A.grass]),leaf:$("vsLeaf","fsLeaf",[A.uv,A.leaf]),stipe:$("vsStipe","fsStipe",[A.uv,A.stipe]),fish:$("vsFish","fsFish",[A.mesh,A.prop]),manta:$("vsManta","fsManta",[A.mesh,A.manta]),surf:$("vsSurf","fsSurf",[]),spark:$("vsSpark","fsSpark",[A.p2],{write:!1,blend:_}),bubble:$("vsBubble","fsBubble",[A.p2],{write:!1,blend:D}),snow:$("vsSnow","fsSnow",[A.p1],{write:!1,blend:_}),plume:$("vsPlume","fsPlume",[A.p2],{write:!1,blend:D}),breath:$("vsBreath","fsBubble",[A.p2],{write:!1,blend:D}),ember:$("vsEmber","fsSpark",[A.p2],{write:!1,blend:_})},st={stat:K("vsStatic",[A.mesh],"back"),prop:K("vsProp",[A.mesh,A.prop],"back"),leaf:K("vsLeaf",[A.uv,A.leaf]),stipe:K("vsStipe",[A.uv,A.stipe]),manta:K("vsManta",[A.mesh,A.manta])},H=(m,P,U,F,X)=>e.createRenderPipeline({label:P,layout:U,vertex:{module:m,entryPoint:"vsFull"},fragment:{module:m,entryPoint:P,targets:[{format:F,blend:X}]},primitive:{topology:"triangle-list"}}),ht=e.createPipelineLayout({bindGroupLayouts:[d]}),At=H(p,"fsRays",e.createPipelineLayout({bindGroupLayouts:[S,B]}),a),_t=H(p,"fsComp",e.createPipelineLayout({bindGroupLayouts:[S,k]}),n),Dt=H(u,"fsDown",ht,a),ie=H(u,"fsBright",ht,a),jt=H(u,"fsUp",ht,a,{color:{srcFactor:"one",dstFactor:"one"},alpha:{srcFactor:"one",dstFactor:"one"}}),ce=H(u,"fsCaustic",ht,a),le=H(u,"fsCrack",ht,a),lt=(m,P)=>{let U=e.createBuffer({size:Math.max(16,m.byteLength+3&-4),usage:P|GPUBufferUsage.COPY_DST});return m.byteLength&&e.queue.writeBuffer(U,0,m.buffer||m,m.byteOffset||0,m.byteLength),U},at=GPUBufferUsage.VERTEX,xt=GPUBufferUsage.INDEX,wt=GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.RENDER_ATTACHMENT,j=new Float32Array(164),he=new Float32Array(164),zt=e.createBuffer({size:j.byteLength,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),pt=e.createBuffer({size:j.byteLength,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),Ge=new Float32Array(4),ge=e.createBuffer({size:16,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),Te=lo(e),Zt=e.createTexture({size:[re.shres,re.shres],format:i,usage:wt}),Ne=512,Wt=5,ve=e.createTexture({size:[Ne,Ne],format:a,mipLevelCount:Wt,usage:wt}),Ae=e.createSampler({addressModeU:"repeat",addressModeV:"repeat",addressModeW:"repeat",magFilter:"linear",minFilter:"linear",mipmapFilter:"linear",maxAnisotropy:4}),me=e.createSampler({magFilter:"linear",minFilter:"linear"}),be=e.createSampler({compare:"less",magFilter:"linear",minFilter:"linear"}),h=1024,y=7,w=e.createTexture({size:[h,h],format:a,mipLevelCount:y,usage:wt}),z=e.createBindGroup({layout:S,entries:[{binding:0,resource:{buffer:zt}},{binding:1,resource:Zt.createView()},{binding:2,resource:be},{binding:3,resource:Te.createView()},{binding:4,resource:Ae},{binding:5,resource:ve.createView()},{binding:6,resource:w.createView()}]}),L=e.createBindGroup({layout:g,entries:[{binding:0,resource:{buffer:pt}}]}),C=m=>e.createBindGroup({layout:d,entries:[{binding:0,resource:m},{binding:1,resource:me},{binding:2,resource:{buffer:ge}}]}),W=(m,P)=>({colorAttachments:[{view:m,loadOp:P?"load":"clear",storeOp:"store",clearValue:[0,0,0,1]}]}),E=[...Array(Wt)].map((m,P)=>ve.createView({baseMipLevel:P,mipLevelCount:1})),N=E.map(m=>W(m)),V=E.map((m,P)=>C(P?E[P-1]:E[1]));{let m=[...Array(y)].map((U,F)=>w.createView({baseMipLevel:F,mipLevelCount:1})),P=e.createCommandEncoder();for(let U=0;U<y;U++){let F=P.beginRenderPass(W(m[U]));F.setPipeline(U?Dt:le),F.setBindGroup(0,C(U?m[U-1]:E[0])),F.draw(3),F.end()}e.queue.submit([P.finish()])}let I={colorAttachments:[],depthStencilAttachment:{view:Zt.createView(),depthClearValue:1,depthLoadOp:"clear",depthStoreOp:"store"}},R=await mo(e,re,t);await t(.97,"\u0412\u043A\u043B\u044E\u0447\u0430\u0435\u043C \u0441\u043E\u043B\u043D\u0446\u0435");let et=[],J=[],vt=(m,P,U,F,X,tt,rt,it,mt)=>et.push({p:m,sp:P,vb:U,ib:F,ifmt:X,n:tt.indexCount,first:tt.firstIndex,base:tt.baseVertex,inst:lt(rt.data,at),cells:rt.cells,maxDist:mt.maxDist,lod0:mt.lod0,lod1:mt.lod1,minLod:mt.minLod,shadowLod:mt.shadowLod}),bt=lt(R.staticVB,at),kt=lt(R.staticIB,xt),Bt=R.staticIB.length,Jt=lt(R.propMeshes.vb,at),ct=lt(R.propMeshes.ib,xt);R.props.forEach((m,P)=>{if(!m.count)return;let U=P<6,F=P<2,X=P>=R.ruinStart;vt(Q.prop,st.prop,Jt,ct,"uint32",R.propMeshes.ranges[P],m,null,X?{maxDist:320,lod0:120,lod1:320,minLod:1,shadowLod:1}:{maxDist:F?70:210,lod0:F?18:60,lod1:F?70:200,minLod:F?0:U?.5:.25,shadowLod:F?0:1})});let ut=lt(R.leafMesh.v,at),Ht=lt(R.leafMesh.i,xt);vt(Q.leaf,st.leaf,ut,Ht,"uint16",{indexCount:R.leafMesh.i.length,firstIndex:0,baseVertex:0},R.leaves,null,{maxDist:260,lod0:45,lod1:150,minLod:.28,shadowLod:.4});let we=lt(R.grassMeshes.vb,at),Ot=lt(R.grassMeshes.ib,xt);R.grass.forEach((m,P)=>m.count&&vt(Q.grass,null,we,Ot,"uint32",R.grassMeshes.ranges[P],m,null,{maxDist:105,lod0:24,lod1:100,minLod:.1,shadowLod:0}));let te=(m,P,U,F,X,tt,rt,it)=>J.push({p:m,sp:P,vb:U,ib:F,ifmt:X,n:tt,inst:lt(rt.data,at),count:rt.count,vertsOnly:it}),ee=lt(R.stipeMesh.v,at),Me=lt(R.stipeMesh.i,xt);te(Q.stipe,st.stipe,ee,Me,"uint16",R.stipeMesh.i.length,R.stipes),te(Q.fish,null,lt(R.fishMesh.vb,at),lt(R.fishMesh.ib,xt),"uint32",R.fishMesh.ib.length,R.fish),te(Q.manta,st.manta,lt(R.mantaMesh.vb,at),lt(R.mantaMesh.ib,xt),"uint32",R.mantaMesh.ib.length,R.mantas);let Ve=[{p:Q.plume,inst:lt(R.plumes.data,at),count:R.plumes.count},{p:Q.ember,inst:lt(R.embers.data,at),count:R.embers.count},{p:Q.bubble,inst:lt(R.bubbles.data,at),count:R.bubbles.count},{p:Q.spark,inst:lt(R.sparks.data,at),count:R.sparks.count},{p:Q.snow,inst:lt(R.snow.data,at),count:R.snow.count}],Rt=R.grid,Ct=0,Yt=0,R0,O0,m0,C0,N0,fe=[],d0=[];function wo(){let m=Math.min(window.devicePixelRatio||1,2),P=Math.max(2,Math.round(qt.clientWidth*m)),U=Math.max(2,Math.round(qt.clientHeight*m));if(P===qt.width&&U===qt.height&&Ct)return;qt.width=P,qt.height=U,Ct=Math.max(2,Math.round(P*re.scale)),Yt=Math.max(2,Math.round(U*re.scale));for(let gt of d0)gt.destroy();let F=(gt,Mt,Xt,Kt=1)=>{let Gt=e.createTexture({size:[gt,Mt],format:Xt,sampleCount:Kt,usage:wt});return d0.push(Gt),Gt};d0=[];let X=F(Ct,Yt,a),tt=F(Ct,Yt,i,r),rt=F(Ct+1>>1,Yt+1>>1,a),it=r>1?F(Ct,Yt,a,r):null;R0={colorAttachments:[r>1?{view:it.createView(),resolveTarget:X.createView(),loadOp:"clear",storeOp:"discard",clearValue:[0,0,0,1]}:{view:X.createView(),loadOp:"clear",storeOp:"store",clearValue:[0,0,0,1]}],depthStencilAttachment:{view:tt.createView(),depthClearValue:1,depthLoadOp:"clear",depthStoreOp:"store"}},O0=W(rt.createView()),fe=[];let mt=Ct,Z=Yt,yt=X.createView();for(let gt=0;gt<5;gt++){mt=Math.max(1,mt>>1),Z=Math.max(1,Z>>1);let Mt=F(mt,Z,a).createView();fe.push({view:Mt,down:W(Mt),up:W(Mt,!0),fromPrev:C(yt),self:C(Mt)}),yt=Mt}C0=e.createBindGroup({layout:B,entries:[{binding:0,resource:tt.createView()}]}),N0=e.createBindGroup({layout:k,entries:[{binding:1,resource:X.createView()},{binding:2,resource:rt.createView()},{binding:3,resource:fe[0].view},{binding:4,resource:me}]}),m0=W(null)}let b={x:Et[0][0],y:Et[0][1],z:Et[0][2],yaw:Et[0][3],pitch:Et[0][4],vx:0,vy:0,vz:0},x0=m=>{let P=Et[m];P&&(b.x=P[0],b.y=P[1],b.z=P[2],b.yaw=P[3],b.pitch=P[4],b.vx=b.vy=b.vz=0)},Ft=Object.create(null),ze=!1,Ke=!1,Qe=Ce.get("visor")!=="0",y0=Ce.get("gauges")!=="0",Be=new u0;addEventListener("keydown",m=>{Ft[m.code]=!0,m.code.startsWith("Digit")&&x0(+m.code.slice(5)-1),m.code==="KeyM"&&Be.toggle(),m.code==="KeyV"&&(Qe=!Qe),m.code==="KeyG"&&(y0=!y0),m.code==="KeyH"&&(Ke=!Ke,Ut("hud").style.display=Ke?"block":"none")}),addEventListener("keyup",m=>{Ft[m.code]=!1}),addEventListener("blur",()=>{for(let m in Ft)Ft[m]=!1});let Mo=matchMedia("(pointer: coarse)").matches,g0=m=>{ze=m,document.body.classList.toggle("dive",m),Ut("go").textContent="\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C"},V0=()=>{if(Be.start(),Mo)g0(!0);else try{qt.requestPointerLock()?.catch?.(()=>{})}catch{}};Ut("go").addEventListener("click",V0),qt.addEventListener("click",()=>{ze||V0()}),document.addEventListener("pointerlockchange",()=>g0(document.pointerLockElement===qt));let I0=0,E0=!1,_0=0,D0=0,zo=m=>{m.preventDefault();let P=m.touches[0];I0=P?1:0,E0=m.touches.length>1,P&&(m.type==="touchmove"&&(b.yaw+=(P.clientX-_0)*.005,b.pitch=nt(b.pitch-(P.clientY-D0)*.005,-1.5,1.5)),_0=P.clientX,D0=P.clientY)};for(let m of["touchstart","touchmove","touchend","touchcancel"])qt.addEventListener(m,zo,{passive:!1});Ut("burger").addEventListener("click",()=>g0(!1)),addEventListener("mousemove",m=>{ze&&(b.yaw+=m.movementX*.0021,b.pitch=nt(b.pitch-m.movementY*.0021,-1.5,1.5))});for(let m of document.querySelectorAll("[data-q]"))m.classList.toggle("on",m.dataset.q===bo),m.addEventListener("click",()=>{localStorage.setItem("ocean-q",m.dataset.q),location.search=""});function ko(m){let P=Math.cos(b.pitch),U=Math.sin(b.yaw)*P,F=Math.sin(b.pitch),X=-Math.cos(b.yaw)*P,tt=Math.cos(b.yaw),rt=Math.sin(b.yaw),it=Math.min(1,(Ft.KeyW||Ft.ArrowUp?1:0)+(ze?I0:0))-(Ft.KeyS||Ft.ArrowDown?1:0),mt=(Ft.KeyD?1:0)-(Ft.KeyA?1:0),Z=(Ft.KeyE||Ft.Space?1:0)-(Ft.KeyQ?1:0),yt=Ft.ShiftLeft||Ft.ShiftRight||E0?22:6.5,gt=U*it+tt*mt,Mt=F*it+Z,Xt=X*it+rt*mt,Kt=Math.hypot(gt,Mt,Xt);Kt>0&&(gt*=yt/Kt,Mt*=yt/Kt,Xt*=yt/Kt);let Gt=1-Math.exp(-m*3.2);b.vx+=(gt-b.vx)*Gt,b.vy+=(Mt-b.vy)*Gt,b.vz+=(Xt-b.vz)*Gt,b.x+=b.vx*m,b.y+=b.vy*m,b.z+=b.vz*m;let ke=1.3;for(let pe=0;pe<3;pe++){let Qt=Rt.sd(b.x,b.y,b.z);if(Qt>=ke)break;let _e=Rt.sd(b.x+.5,b.y,b.z)-Rt.sd(b.x-.5,b.y,b.z),Fe=Rt.sd(b.x,b.y+.5,b.z)-Rt.sd(b.x,b.y-.5,b.z),De=Rt.sd(b.x,b.y,b.z+.5)-Rt.sd(b.x,b.y,b.z-.5),Se=Math.hypot(_e,Fe,De)||1,Le=Math.min(ke-Qt,2);b.x+=_e/Se*Le,b.y+=Fe/Se*Le,b.z+=De/Se*Le}b.y=Math.min(b.y,ft.SURF-.9);let Tt=Math.hypot(b.x,b.z);Tt>ft.RIM+10&&(b.x*=(ft.RIM+10)/Tt,b.z*=(ft.RIM+10)/Tt)}let j0=new Float32Array(16),W0=new Float32Array(16),Ze=new Float32Array(16),H0=new Float32Array(16),Y0=new Float32Array(16),$0=new Float32Array(16),b0=new Float32Array(16),de=new Float32Array(24),Je=-.32,t0=1,e0=.38;{let m=Math.hypot(Je,t0,e0);Je/=m,t0/=m,e0/=m}T0(Y0,Je*220,22+t0*220,e0*220,0,22,0,0,0,1),ro($0,-165,165,-165,165,60,380),A0(b0,$0,Y0);function So(m){for(let P=0;P<6;P++){let U=P>>1,F=P&1?-1:1,X=m[3]+F*m[U],tt=m[7]+F*m[4+U],rt=m[11]+F*m[8+U],it=m[15]+F*m[12+U];P===4&&(X=m[2],tt=m[6],rt=m[10],it=m[14]),de[P*4]=X,de[P*4+1]=tt,de[P*4+2]=rt,de[P*4+3]=it}}function Po(m,P){for(let U=0;U<24;U+=4){let F=de[U],X=de[U+1],tt=de[U+2];if(F*(F>0?m[P+3]:m[P])+X*(X>0?m[P+4]:m[P+1])+tt*(tt>0?m[P+5]:m[P+2])+de[U+3]<0)return!1}return!0}let w0=0;function X0(m,P){for(let U=0;U<et.length;U++){let F=et[U],X=F.cells;if(!(P&&(!F.sp||F.shadowLod<=0))){m.setPipeline(P?F.sp:F.p),m.setVertexBuffer(0,F.vb),m.setVertexBuffer(1,F.inst),m.setIndexBuffer(F.ib,F.ifmt);for(let tt=0;tt<X.length;tt+=8){let rt=X[tt+7];if(P)rt=Math.ceil(rt*F.shadowLod);else{if(!Po(X,tt))continue;let it=Math.max(X[tt]-b.x,0,b.x-X[tt+3]),mt=Math.max(X[tt+1]-b.y,0,b.y-X[tt+4]),Z=Math.max(X[tt+2]-b.z,0,b.z-X[tt+5]),yt=Math.sqrt(it*it+mt*mt+Z*Z);if(yt>F.maxDist)continue;let gt=nt(1-(yt-F.lod0)/(F.lod1-F.lod0)*(1-F.minLod),F.minLod,1);rt=Math.ceil(rt*gt),w0+=rt}rt>0&&m.drawIndexed(F.n,rt,F.first,F.base,X[tt+6])}}}for(let U=0;U<J.length;U++){let F=J[U];P&&!F.sp||(m.setPipeline(P?F.sp:F.p),m.setVertexBuffer(0,F.vb),m.setVertexBuffer(1,F.inst),m.setIndexBuffer(F.ib,F.ifmt),m.drawIndexed(F.n,F.count))}}let Ie=40,Go=5.2,$t=new Float32Array(Ie*8),oe=new Float32Array(Ie*3),o0=new Float32Array(Ie),K0=e.createBuffer({size:$t.byteLength,usage:at|GPUBufferUsage.COPY_DST}),Y={k:Qe?1:0,lx:0,ly:0,roll:0,yaw:b.yaw,pitch:b.pitch,stroke:0,ph:0,spawn:0,heat:0,hudT:0,air:98,tx:0,ty:0},M0=Ut("visor"),To=Ut("v-depth"),Ao=Ut("v-temp"),Bo=Ut("v-air"),Fo=Ut("v-head"),Lo=["\u0421","\u0421\u0412","\u0412","\u042E\u0412","\u042E","\u042E\u0417","\u0417","\u0421\u0417"],Q0=performance.now(),s0=yo??0,z0=0,Ee=0,n0=0,qo=0,a0=0;function Z0(m){let P=Math.min((m-Q0)/1e3,.05);Q0=m,yo===null&&(s0+=P),wo(),ko(P),ao(j0,go,Ct/Yt,jo,Wo);let U=Math.cos(b.pitch),F=Math.sin(b.yaw)*U,X=Math.sin(b.pitch),tt=-Math.cos(b.yaw)*U,rt=Math.cos(b.yaw),it=Math.sin(b.yaw),mt=-it*X,Z=it*F-rt*tt,yt=rt*X;Y.k+=((Qe?1:0)-Y.k)*(1-Math.exp(-P*6));let gt=b.yaw-Y.yaw,Mt=b.pitch-Y.pitch;Y.yaw=b.yaw,Y.pitch=b.pitch,(Math.abs(gt)>1||Math.abs(Mt)>1)&&(gt=Mt=0);let Xt=P>.001?1/P:0,Kt=1-Math.exp(-P*7);Y.lx+=(nt(-gt*Xt*.045,-.12,.12)-Y.lx)*Kt,Y.ly+=(nt(-Mt*Xt*.045,-.1,.1)-Y.ly)*Kt,Y.roll+=(nt(-gt*Xt*.03,-.06,.06)-Y.roll)*(1-Math.exp(-P*5));let Gt=Math.hypot(b.vx,b.vy,b.vz),ke=Math.min(Gt/6.5,1.6)*Y.k;Gt>.3&&(Y.stroke+=P*(1.1+Gt*.22));let Tt=s0/Go%1,pe=1-.55*Lt(0,.35,Tt)+.55*Lt(.48,.8,Tt);Y.k>.5&&ze&&(Tt<Y.ph&&Be.breath(0),Y.ph<.48&&Tt>=.48&&Be.breath(1)),Y.ph=Tt,Y.k>.5&&Tt>.5&&Tt<.8&&(Y.spawn=Math.min(Y.spawn+P*16,4));for(let O=0;O<Ie;O++){let ot=O*8,St=O*3;if(o0[O]<=0&&Y.spawn>=1){Y.spawn--,o0[O]=1.7;let se=O&1?1:-1,ue=se*(.15+Math.random()*.07),qe=-.2-Math.random()*.05,G0=.42+Math.random()*.14;$t[ot]=b.x+rt*ue+mt*qe+F*G0,$t[ot+1]=b.y+Z*qe+X*G0,$t[ot+2]=b.z+it*ue+yt*qe+tt*G0,$t[ot+3]=.006+Math.random()*Math.random()*.022,$t[ot+5]=Math.random(),oe[St]=b.vx*.7+rt*se*.25+(Math.random()-.5)*.3,oe[St+1]=b.vy*.7+.5+Math.random()*.5,oe[St+2]=b.vz*.7+it*se*.25+(Math.random()-.5)*.3}if(o0[O]>0){let se=Math.exp(-P*1.5);oe[St]*=se,oe[St+2]*=se,oe[St+1]+=(1.3-oe[St+1])*(1-se),$t[ot]+=oe[St]*P,$t[ot+1]+=oe[St+1]*P,$t[ot+2]+=oe[St+2]*P;let ue=o0[O]-=P;$t[ot+4]=ue>0?Math.min(1,ue*3)*Math.min(1,(1.7-ue)*10):0}}e.queue.writeBuffer(K0,0,$t);let Qt=0;for(let O=0;O<64;O+=4){let ot=R.lava,St=ot[O+3]*1.7,se=b.x-ot[O],ue=b.y-ot[O+1],qe=b.z-ot[O+2];Qt=Math.max(Qt,1-(se*se+ue*ue+qe*qe)/(St*St))}Y.heat+=(Qt-Y.heat)*(1-Math.exp(-P*2));let _e=Math.sin(Y.stroke)*.014*ke+Y.roll*.5*Y.k,Fe=Math.sin(Y.stroke*2)*.03*ke+Math.sin(Tt*6.2832)*.012*Y.k,De=Math.sin(_e),Se=Math.cos(_e),Le=b.x+mt*Fe,J0=b.y+Z*Fe,to=b.z+yt*Fe;T0(W0,Le,J0,to,Le+F,J0+X,to+tt,mt*Se+rt*De,Z*Se,yt*Se+it*De),A0(Ze,j0,W0),r0(H0,Ze),So(Ze),j.set(Ze,0),j.set(H0,16),j.set(b0,32),j.set(R.shipInv,48),j[64]=b.x,j[65]=b.y,j[66]=b.z,j[67]=s0,j[68]=Je,j[69]=t0,j[70]=e0,j[71]=Eo,j[72]=Ct,j[73]=Yt,j[74]=1/Ct,j[75]=1/Yt;let Uo=Math.hypot(b.x-ft.grotto[0],b.z-ft.grotto[1])/ft.grotto[2],k0=nt((Uo-.5)/.5,0,1);j[76]=1-k0*k0*(3-2*k0),j[77]=nt(Math.exp(-(ft.SURF-b.y)*.01),.5,1),j[78]=_o,j[79]=.5*Yt/Math.tan(go/2),j[80]=qt.width,j[81]=qt.height,j[82]=1/qt.width,j[83]=1/qt.height,j[84]=Do,j[88]=Y.lx,j[89]=Y.ly,j[90]=Y.roll,j[91]=Y.k,j[92]=pe,j[93]=nt(Y.heat,0,1),j[96]=b.vx,j[97]=b.vy,j[98]=b.vz,j[99]=Gt,j.set(R.lava,100),e.queue.writeBuffer(zt,0,j),Ge[0]=s0,Ge[1]=1,e.queue.writeBuffer(ge,0,Ge);let xe=e.createCommandEncoder();for(let O=0;O<Wt;O++){let ot=xe.beginRenderPass(N[O]);ot.setPipeline(O?Dt:ce),ot.setBindGroup(0,V[O]),ot.draw(3),ot.end()}if(z0%re.shadowEvery===0){he.set(j),he.set(b0,0),e.queue.writeBuffer(pt,0,he);let O=xe.beginRenderPass(I);O.setBindGroup(0,L),O.setPipeline(st.stat),O.setVertexBuffer(0,bt),O.setIndexBuffer(kt,"uint32"),O.drawIndexed(Bt),X0(O,!0),O.end()}{w0=0;let O=xe.beginRenderPass(R0);O.setBindGroup(0,z),O.setPipeline(Q.sky),O.draw(3),O.setPipeline(Q.stat),O.setVertexBuffer(0,bt),O.setIndexBuffer(kt,"uint32"),O.drawIndexed(Bt),X0(O,!1),O.setPipeline(Q.surf),O.draw(6);for(let ot=0;ot<Ve.length;ot++){let St=Ve[ot];O.setPipeline(St.p),O.setVertexBuffer(0,St.inst),O.draw(6,St.count)}O.setPipeline(Q.breath),O.setVertexBuffer(0,K0),O.draw(6,Ie),O.end()}{let O=xe.beginRenderPass(O0);O.setPipeline(At),O.setBindGroup(0,z),O.setBindGroup(1,C0),O.draw(3),O.end()}for(let O=0;O<fe.length;O++){let ot=xe.beginRenderPass(fe[O].down);ot.setPipeline(O?Dt:ie),ot.setBindGroup(0,fe[O].fromPrev),ot.draw(3),ot.end()}for(let O=fe.length-2;O>=0;O--){let ot=xe.beginRenderPass(fe[O].up);ot.setPipeline(jt),ot.setBindGroup(0,fe[O+1].self),ot.draw(3),ot.end()}{m0.colorAttachments[0].view=o.getCurrentTexture().createView();let O=xe.beginRenderPass(m0);O.setPipeline(_t),O.setBindGroup(0,z),O.setBindGroup(1,N0),O.draw(3),O.end()}if(e.queue.submit([xe.finish()]),z0++,Be.update(b,ft.SURF,Y.heat,Y.k),Y.hudT-=P,Y.hudT<=0){Y.hudT=.16;let O=Y.k>.5&&y0&&(ze||!!h0);if(M0.classList.toggle("on",O),M0.classList.toggle("hot",Y.heat>.4),O){ze&&(Y.air=Math.max(21,Y.air-.16/55));let ot=(b.yaw*57.2958%360+360)%360;To.textContent=(ft.SURF-b.y).toFixed(1),Ao.textContent=Math.round(6+9*b.y/ft.SURF+85*Math.pow(nt(Y.heat,0,1),1.5)),Bo.textContent=Math.round(Y.air),Fo.textContent=Lo[Math.round(ot/45)%8]+" "+String(Math.round(ot)%360).padStart(3,"0")+"\xB0"}}let S0=Math.round(Y.lx*innerHeight*.5),P0=Math.round(-Y.ly*innerHeight*.5);(S0!==Y.tx||P0!==Y.ty)&&(Y.tx=S0,Y.ty=P0,M0.style.transform="translate("+S0+"px,"+P0+"px)"),Ee+=P,n0++,Ee>.5&&(a0=n0/Ee<42&&z0>120?a0+1:0,a0>=4&&re.scale>.5&&!h0&&(re.scale*=.85,Ct=0,a0=0),Ke&&(Ut("hud").textContent=`${Math.round(n0/Ee)} fps \xB7 ${Ct}\xD7${Yt} \xB7 ${w0/1e3|0}k inst \xB7 ${b.x.toFixed(0)}, ${b.y.toFixed(0)}, ${b.z.toFixed(0)}`),Ee=0,n0=0),++qo===12&&(document.body.classList.add("ready"),window.__ready=!0),requestAnimationFrame(Z0)}window.__cam=(m,P,U,F,X)=>{b.x=m,b.y=P,b.z=U,b.yaw=F,b.pitch=X,b.vx=b.vy=b.vz=0},window.__view=x0,window.__sound=Be,window.__vel=(m,P,U)=>{b.vx=m,b.vy=P,b.vz=U},window.__map=(m=800)=>{let P=document.createElement("canvas");P.width=P.height=m;let U=P.getContext("2d"),F=U.createImageData(m,m),X=Rt.n,tt=Rt.o,rt=Rt.cell;for(let Z=0;Z<m;Z++)for(let yt=0;yt<m;yt++){let gt=(yt/m-.5)*320,Mt=(Z/m-.5)*320,Xt=Math.round((gt-tt[0])/rt),Kt=Math.round((Mt-tt[2])/rt),Gt=tt[1];for(let Qt=X[1]-1;Qt>=0;Qt--)if(Rt.g[Xt+X[0]*(Qt+X[1]*Kt)]<0){Gt=tt[1]+Qt*rt;break}let ke=Rt.floorY(gt,Mt),Tt=(Gt-tt[1])/66*255,pe=(Z*m+yt)*4;F.data[pe]=Tt+(Gt-ke>3?90:0),F.data[pe+1]=Tt,F.data[pe+2]=Tt+(Gt>ft.SURF?120:0),F.data[pe+3]=255}U.putImageData(F,0,0);let it=Z=>(Z/320+.5)*m,mt=new Float32Array(R.stipes.data.buffer,R.stipes.data.byteOffset,R.stipes.count*8);U.fillStyle="#3f6";for(let Z=0;Z<R.stipes.count;Z++)mt[Z*8+4]>12&&U.fillRect(it(mt[Z*8])-1,it(mt[Z*8+2])-1,3,3);U.strokeStyle="#ff0",U.fillStyle="#ff0",U.font="14px sans-serif",U.lineWidth=2,Et.forEach((Z,yt)=>{U.beginPath(),U.arc(it(Z[0]),it(Z[2]),5,0,7),U.moveTo(it(Z[0]),it(Z[2])),U.lineTo(it(Z[0]+Math.sin(Z[3])*14),it(Z[2]-Math.cos(Z[3])*14)),U.stroke(),U.fillText(yt+1,it(Z[0])+7,it(Z[2])-7)}),U.strokeStyle="#0ff";for(let Z=40;Z<=120;Z+=40)U.beginPath(),U.arc(m/2,m/2,Z/320*m,0,7),U.stroke();return P.toDataURL("image/png")},window.__stats=R.stats,window.__grid=Rt,h0&&(x0(+h0-1),document.body.classList.add("dive","shot")),await t(1,""),requestAnimationFrame(Z0)}Ho().catch(s=>v0(String(s.stack||s)));})();
+</script>
+</body>
+</html>
