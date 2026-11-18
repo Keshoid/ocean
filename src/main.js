@@ -4,6 +4,7 @@ import { C, VIEWS, buildWorld } from './world.js';
 import { buildNoiseTex } from './sdf.js';
 import { perspective, ortho, lookAt, mul, invert, clamp, sstep } from './math.js';
 import { Sound } from './audio.js';
+import { krakenParts } from './kraken.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -108,10 +109,13 @@ async function main() {
     snow: pipe('vsSnow', 'fsSnow', [VB.p1], { write: false, blend: ADD }),
     plume: pipe('vsPlume', 'fsPlume', [VB.p2], { write: false, blend: PRE }),
     breath: pipe('vsBreath', 'fsBubble', [VB.p2], { write: false, blend: PRE }),
+    kbody: pipe('vsKrakBody', 'fsKrak', [VB.mesh], { cull: 'back' }),
+    karm: pipe('vsKrakArm', 'fsKrak', [VB.uv, VB.stipe]),
     ember: pipe('vsEmber', 'fsSpark', [VB.p2], { write: false, blend: ADD }),
   };
   const S = {
     stat: spipe('vsStatic', [VB.mesh], 'back'), prop: spipe('vsProp', [VB.mesh, VB.prop], 'back'),
+    kbody: spipe('vsKrakBody', [VB.mesh], 'back'), karm: spipe('vsKrakArm', [VB.uv, VB.stipe]),
     leaf: spipe('vsLeaf', [VB.uv, VB.leaf]), stipe: spipe('vsStipe', [VB.uv, VB.stipe]), manta: spipe('vsManta', [VB.mesh, VB.manta]),
   };
   const fullPipe = (module, fs, layout, format, blend) => dev.createRenderPipeline({
@@ -130,7 +134,7 @@ async function main() {
     return b;
   };
   const VTX = GPUBufferUsage.VERTEX, IDX = GPUBufferUsage.INDEX, TEX = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT;
-  const UB = new Float32Array(164), UBS = new Float32Array(164);
+  const UB = new Float32Array(184), UBS = new Float32Array(184);
   const ubo = dev.createBuffer({ size: UB.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const uboS = dev.createBuffer({ size: UB.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const TB = new Float32Array(4), tbo = dev.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -188,6 +192,8 @@ async function main() {
   extra(P.stipe, S.stipe, stipeVB, stipeIB, 'uint16', W.stipeMesh.i.length, W.stipes);
   extra(P.fish, null, buf(W.fishMesh.vb, VTX), buf(W.fishMesh.ib, IDX), 'uint32', W.fishMesh.ib.length, W.fish);
   extra(P.manta, S.manta, buf(W.mantaMesh.vb, VTX), buf(W.mantaMesh.ib, IDX), 'uint32', W.mantaMesh.ib.length, W.mantas);
+  const KP = krakenParts();
+  const kBodyVB = buf(KP.body.vb, VTX), kBodyIB = buf(KP.body.ib, IDX), kArmVB = buf(KP.arm.v, VTX), kArmIB = buf(KP.arm.i, IDX), kArmInst = buf(KP.arms, VTX);
   const particles = [
     { p: P.plume, inst: buf(W.plumes.data, VTX), count: W.plumes.count },
     { p: P.ember, inst: buf(W.embers.data, VTX), count: W.embers.count },
@@ -231,12 +237,26 @@ async function main() {
   const cam = { x: VIEWS[0][0], y: VIEWS[0][1], z: VIEWS[0][2], yaw: VIEWS[0][3], pitch: VIEWS[0][4], vx: 0, vy: 0, vz: 0 };
   const setView = (i) => { const v = VIEWS[i]; if (!v) return; cam.x = v[0]; cam.y = v[1]; cam.z = v[2]; cam.yaw = v[3]; cam.pitch = v[4]; cam.vx = cam.vy = cam.vz = 0; };
   const keys = Object.create(null);
+  const flag = (name, dflt) => (params.has(name) ? params.get(name) === '1' : (localStorage.getItem('ocean-' + name) ?? dflt) === '1');
+  let nightOn = flag('night', '0'), krakOn = flag('kraken', '1'), torchOn = params.has('torch') ? params.get('torch') === '1' : nightOn;
+  const env = { night: nightOn ? 1 : 0, torch: torchOn ? 1 : 0, nextCall: 4 };
+  const setMode = (name, on) => {
+    localStorage.setItem('ocean-' + name, on ? '1' : '0');
+    $('m-' + name).classList.toggle('on', on);
+  };
+  const toggleNight = () => { nightOn = !nightOn; torchOn = nightOn; setMode('night', nightOn); };
+  const toggleKraken = () => { krakOn = !krakOn; setMode('kraken', krakOn); };
+  $('m-night').classList.toggle('on', nightOn); $('m-kraken').classList.toggle('on', krakOn);
+  $('m-night').addEventListener('click', toggleNight); $('m-kraken').addEventListener('click', toggleKraken);
   let diving = false, hud = false, visorOn = params.get('visor') !== '0', gaugesOn = params.get('gauges') !== '0';
   const sound = new Sound();
   addEventListener('keydown', (e) => {
     keys[e.code] = true;
     if (e.code.startsWith('Digit')) setView(+e.code.slice(5) - 1);
     if (e.code === 'KeyM') sound.toggle();
+    if (e.code === 'KeyN') toggleNight();
+    if (e.code === 'KeyK') toggleKraken();
+    if (e.code === 'KeyF') torchOn = !torchOn;
     if (e.code === 'KeyV') visorOn = !visorOn;
     if (e.code === 'KeyG') gaugesOn = !gaugesOn;
     if (e.code === 'KeyH') { hud = !hud; $('hud').style.display = hud ? 'block' : 'none'; }
@@ -346,6 +366,10 @@ async function main() {
         if (n > 0) pass.drawIndexed(b.n, n, b.first, b.base, c[o + 6]);
       }
     }
+    if (krakOn) {
+      pass.setPipeline(shadow ? S.kbody : P.kbody); pass.setVertexBuffer(0, kBodyVB); pass.setIndexBuffer(kBodyIB, 'uint32'); pass.drawIndexed(KP.body.ib.length);
+      pass.setPipeline(shadow ? S.karm : P.karm); pass.setVertexBuffer(0, kArmVB); pass.setVertexBuffer(1, kArmInst); pass.setIndexBuffer(kArmIB, 'uint16'); pass.drawIndexed(KP.arm.i.length, 8);
+    }
     for (let i = 0; i < extras.length; i++) {
       const e = extras[i];
       if (shadow && !e.sp) continue;
@@ -361,6 +385,7 @@ async function main() {
   const breathBuf = dev.createBuffer({ size: breathData.byteLength, usage: VTX | GPUBufferUsage.COPY_DST });
   const hel = { k: visorOn ? 1 : 0, lx: 0, ly: 0, roll: 0, yaw: cam.yaw, pitch: cam.pitch, stroke: 0, ph: 0, spawn: 0, heat: 0, hudT: 0, air: 98, tx: 0, ty: 0 };
   const vBox = $('visor'), vDepth = $('v-depth'), vTemp = $('v-temp'), vAir = $('v-air'), vHead = $('v-head');
+  const vAlert = $('v-alert');
   const CARD = ['С', 'СВ', 'В', 'ЮВ', 'Ю', 'ЮЗ', 'З', 'СЗ'];
 
   let last = performance.now(), time = FIXED_T ?? 0, frameNo = 0, fpsT = 0, fpsN = 0, ready = 0, slow = 0;
@@ -369,6 +394,10 @@ async function main() {
     if (FIXED_T === null) time += dt;
     resize();
     moveCamera(dt);
+    // night falls (and lifts) over a few seconds; the lamp snaps on
+    if (SHOT) { env.night = nightOn ? 1 : 0; env.torch = torchOn ? 1 : 0; }
+    env.night += ((nightOn ? 1 : 0) - env.night) * (1 - Math.exp(-dt * 0.9));
+    env.torch += ((torchOn ? 1 : 0) - env.torch) * (1 - Math.exp(-dt * 12));
 
     // uniforms
     perspective(proj, FOV, sw / sh, NEAR, FAR);
@@ -432,13 +461,26 @@ async function main() {
     const gd = Math.hypot(cam.x - C.grotto[0], cam.z - C.grotto[1]) / C.grotto[2], gt = clamp((gd - 0.5) / 0.5, 0, 1);
     UB[76] = 1 - gt * gt * (3 - 2 * gt);
     UB[77] = clamp(Math.exp(-(C.SURF - cam.y) * 0.010), 0.5, 1);
-    UB[78] = RAYS; UB[79] = (0.5 * sh) / Math.tan(FOV / 2);
+    UB[78] = RAYS * (1 - 0.88 * env.night); UB[79] = (0.5 * sh) / Math.tan(FOV / 2);
     UB[80] = canvas.width; UB[81] = canvas.height; UB[82] = 1 / canvas.width; UB[83] = 1 / canvas.height;
     UB[84] = BLOOM;
     UB[88] = hel.lx; UB[89] = hel.ly; UB[90] = hel.roll; UB[91] = hel.k;
     UB[92] = fog; UB[93] = clamp(hel.heat, 0, 1);
     UB[96] = cam.vx; UB[97] = cam.vy; UB[98] = cam.vz; UB[99] = speed;
-    UB.set(W.lava, 100);
+    // the kraken sweeps a long loop, mantle first: low across the basin in front of the whale, out into the haze, back over the start
+    const kth = 1.3 - time * 0.0698, ksn = Math.sin(kth), kcs = Math.cos(kth);
+    const kx = 16 + 60 * ksn, ky = 21 + 19 * ksn * ksn, kz = 20 - 22 * kcs, kl = 1 / Math.hypot(60 * kcs, 38 * ksn * kcs, 22 * ksn);
+    UB[100] = kx; UB[101] = ky; UB[102] = kz; UB[103] = krakOn ? 1 : 0;
+    UB[104] = -60 * kcs * kl; UB[105] = -38 * ksn * kcs * kl; UB[106] = -22 * ksn * kl; UB[107] = time;
+    const kdist = Math.hypot(kx - cam.x, ky - cam.y, kz - cam.z);
+    if (krakOn && diving && kdist < 90 && time > env.nextCall) { env.nextCall = time + 14 + Math.random() * 10; sound.kraken(1 - kdist / 90); }
+    // helmet lamp: sits on the right temple and trails the head like the helmet does
+    let tdx = fx + rx * hel.lx * 0.6 + ux * hel.ly * 0.6, tdy = fy + uy * hel.ly * 0.6, tdz = fz + rz * hel.lx * 0.6 + uz * hel.ly * 0.6;
+    const tl = 1 / Math.hypot(tdx, tdy, tdz);
+    UB[108] = ex + rx * 0.3 + ux * 0.16; UB[109] = ey + uy * 0.16; UB[110] = ez + rz * 0.3 + uz * 0.16; UB[111] = env.torch;
+    UB[112] = tdx * tl; UB[113] = tdy * tl; UB[114] = tdz * tl;
+    UB[116] = env.night;
+    UB.set(W.lava, 120);
     dev.queue.writeBuffer(ubo, 0, UB);
     TB[0] = time; TB[1] = 1;
     dev.queue.writeBuffer(tbo, 0, TB);
@@ -502,6 +544,7 @@ async function main() {
       hel.hudT = 0.16;
       const show = hel.k > 0.5 && gaugesOn && (diving || !!SHOT);
       vBox.classList.toggle('on', show); vBox.classList.toggle('hot', hel.heat > 0.4);
+      vAlert.textContent = show && krakOn && kdist < 95 ? 'крупный объект · ' + Math.round(kdist) + ' м' : '';
       if (show) {
         if (diving) hel.air = Math.max(21, hel.air - 0.16 / 55);
         const deg = (((cam.yaw * 57.2958) % 360) + 360) % 360;

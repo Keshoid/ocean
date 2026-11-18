@@ -41,10 +41,10 @@ button { font: inherit; color: inherit; background: none; border: 1px solid #fff
 #keys { display: grid; grid-template-columns: max-content auto; gap: .45em 1.1em; align-items: center; font-size: .85em; color: var(--dim); }
 kbd { display: inline-block; min-width: 1.9em; padding: .05em .5em .12em; margin-right: .2em; text-align: center; font: inherit; color: var(--ink);
   border: 1px solid #ffffff33; border-bottom-width: 2px; border-radius: 3px; background: #ffffff0a; }
-#qual { display: flex; align-items: center; gap: 1em; font-size: .85em; color: var(--dim); }
-#seg { display: flex; }
-#seg button { padding: .3em 1.1em .35em; margin-left: -1px; color: var(--dim); }
-#seg button.on { color: #170800; background: var(--glow); border-color: var(--glow); position: relative; }
+#qual { display: grid; grid-template-columns: max-content auto; gap: .6em 1em; align-items: center; justify-content: start; font-size: .85em; color: var(--dim); }
+.seg { display: flex; }
+.seg button { padding: .3em 1.1em .35em; margin-left: -1px; color: var(--dim); }
+.seg button.on { color: #170800; background: var(--glow); border-color: var(--glow); position: relative; }
 
 /* instruments projected on the visor glass */
 #visor { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; pointer-events: none; opacity: 0; transition: opacity .6s; color: #c9f4ff;
@@ -54,7 +54,8 @@ kbd { display: inline-block; min-width: 1.9em; padding: .05em .5em .12em; margin
 #visor small { font-size: .62em; letter-spacing: .32em; text-transform: uppercase; opacity: .85; }
 #visor b { font-weight: 400; font-size: 1.25em; margin-bottom: .45em; }
 #v-top { top: 6.5%; left: 50%; transform: translateX(-50%); align-items: center; font-size: 1em; }
-#v-top::after { content: ""; width: 1px; height: .7em; margin-top: .3em; background: currentColor; }
+#v-head::after { content: ""; display: block; width: 1px; height: .7em; margin: .3em auto 0; background: currentColor; }
+#v-alert { margin-top: .5em; color: #ffd9a0; text-shadow: 0 0 .7em #ff8a2a; }
 #v-left { left: 16%; bottom: 13%; padding-left: .8em; border-left: 2px solid #a9ecffb0; }
 #v-right { right: 16%; bottom: 13%; padding-right: .8em; border-right: 2px solid #a9ecffb0; align-items: flex-end; }
 #visor.hot .t { color: #ffb070; text-shadow: 0 0 .7em #ff5a1a; }
@@ -80,13 +81,17 @@ kbd { display: inline-block; min-width: 1.9em; padding: .05em .5em .12em; margin
     <span><kbd>E</kbd><kbd>Q</kbd></span><span>вверх и вниз</span>
     <span><kbd>Shift</kbd></span><span>быстрее</span>
     <span><kbd>1</kbd>…<kbd>6</kbd></span><span>перенестись в интересное место</span>
+    <span><kbd>N</kbd><kbd>F</kbd><kbd>K</kbd></span><span>ночь, фонарь, кракен</span>
     <span><kbd>V</kbd><kbd>G</kbd></span><span>снять шлем, убрать приборы</span>
     <span><kbd>M</kbd><kbd>H</kbd><kbd>Esc</kbd></span><span>звук, счётчик кадров, меню</span>
   </div>
-  <div id="qual"><span>Детализация</span><div id="seg"><button data-q="low">низкая</button><button data-q="medium">средняя</button><button data-q="high">высокая</button></div></div>
+  <div id="qual">
+    <span>Детализация</span><div class="seg"><button data-q="low">низкая</button><button data-q="medium">средняя</button><button data-q="high">высокая</button></div>
+    <span>Режимы</span><div class="seg"><button id="m-kraken">кракен</button><button id="m-night">ночь</button></div>
+  </div>
 </div>
 <div id="visor">
-  <div id="v-top"><span id="v-head">С 000°</span></div>
+  <div id="v-top"><span id="v-head">С 000°</span><small id="v-alert"></small></div>
   <div id="v-left"><small>глубина</small><b><span id="v-depth">0.0</span> м</b></div>
   <div id="v-right"><small>воздух</small><b><span id="v-air">98</span> %</b><small>вода</small><b class="t"><span id="v-temp">8</span> °C</b></div>
 </div>

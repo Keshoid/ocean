@@ -23,16 +23,17 @@ export function columnMesh(seed, h, base, capital, drum) {
   const R = rng(seed), m = new Mesh(), S = 24, off = R() * 50;
   const prof = [];                                   // [radius, y, fluted, jagged]
   if (base) prof.push([0.68, 0.2, 0, 0], [0.68, 0.4, 0, 0]);
-  const y0 = base ? 0.46 : 0, y1 = capital ? h - 0.52 : h, rings = Math.max(2, Math.round((y1 - y0) / 0.75));
+  const y0 = base ? 0.46 : 0, y1 = capital ? h - 0.52 : h, rings = Math.max(3, Math.round((y1 - y0) / 0.36));
   for (let k = 0; k <= rings; k++) {
     const y = y0 + ((y1 - y0) * k) / rings;
-    prof.push([0.5 * (1 - 0.14 * Math.pow(y / 6.5, 1.5)), y, 1, !capital && !drum && k === rings ? 1 : 0]);
+    const seam = k % 3 === 0 && k > 0 && k < rings ? 0.95 : 1;          // joints between the drums
+    prof.push([0.5 * seam * (1 - 0.14 * Math.pow(y / 6.5, 1.5)), y, 1, !capital && !drum && k === rings ? 1 : 0]);
   }
   if (capital) prof.push([0.74, h - 0.24, 0, 0]);
   const b0 = m.nv;
   for (const [pr, py, fl, jag] of prof) for (let s = 0; s < S; s++) {
     const a = (s / S) * 6.2832, ca = Math.cos(a), sa = Math.sin(a);
-    const r = pr * (fl && s % 2 ? 0.93 : 1) * (1 + (fbm(ca * 1.5 + off, py * 0.9, sa * 1.5, 3) - 0.5) * 0.16);
+    const r = pr * (fl && s % 2 ? 0.89 : 1) * (1 + (fbm(ca * 1.5 + off, py * 0.9, sa * 1.5, 3) - 0.5) * 0.07);
     const y = py - (jag ? fbm(ca * 1.7 + off, 5, sa * 1.7, 2) * Math.min(1.4, h * 0.35) : 0);
     m.vert(ca * r, y, sa * r, 1, 1, 1, 0, 0.5 + 0.5 * Math.min(1, py / 1.4) - (capital && py > h - 0.6 ? 0.2 : 0));
   }
@@ -45,7 +46,7 @@ export function columnMesh(seed, h, base, capital, drum) {
     const c = m.vert(0, h - (drum ? 0 : 0.55), 0, 0.8, 0.8, 0.8, 0, 0.8);
     for (let s = 0; s < S; s++) m.tri(top + s, c, top + ((s + 1) % S));
   }
-  if (drum) {
+  if (!base) {
     const c = m.vert(0, 0, 0, 0.8, 0.8, 0.8, 0, 0.6);
     for (let s = 0; s < S; s++) m.tri(b0 + ((s + 1) % S), c, b0 + s);
   }

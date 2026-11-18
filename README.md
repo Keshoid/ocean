@@ -2,8 +2,9 @@
 
 An underwater world you can swim through, right in your browser: a volcanic seabed of cracked basalt with lava glowing
 in the cracks, the ruins of a drowned ancient city (colonnades, a temple, an arcade), smoke and embers over the fissures,
-a kelp forest, light shafts, caustics, a shipwreck, a stone whale tail, manta rays, schools of fish, floating boulders
-and a purple grotto — all seen through the visor of a diving helmet.
+a kelp forest, light shafts, caustics, a shipwreck, a stone whale tail, manta rays, schools of fish, floating boulders,
+a purple grotto and a giant kraken that swims past — all seen through the visor of a diving helmet. A night mode turns
+the sun into a moon, gives you a helmet lamp, and makes the kelp, fish and the kraken glow.
 
 Everything is procedural: no images, no 3D models, no sound files. Plain WebGPU with no engine or 3D library.
 The result is a single self-contained `index.html` (about 120 KB).
@@ -14,12 +15,15 @@ The code, shaders and page design were written independently; nothing was carrie
 
 The in-game interface is in Russian.
 
-![Colonnade leading to the stone whale tail, lava in the foreground](docs/avenue.jpg)
+![The kraken passing over the ruins and the lava field](docs/avenue.jpg)
 
 | | |
 |---|---|
-| ![Lava in the cracked seabed](docs/lava.jpg) | ![Temple ruins](docs/temple.jpg) |
-| ![The shipwreck](docs/wreck.jpg) | ![The purple grotto](docs/grotto.jpg) |
+| ![Night: lava, the helmet lamp and the kraken overhead](docs/night.jpg) | ![The kraken at night](docs/kraken-night.jpg) |
+| ![Lava flowing between the basalt plates](docs/lava.jpg) | ![Glowing kelp at night](docs/night-kelp.jpg) |
+| ![Temple ruins](docs/temple.jpg) | ![The shipwreck](docs/wreck.jpg) |
+
+![The purple grotto](docs/grotto.jpg)
 
 ## Run
 
@@ -34,11 +38,12 @@ a ready `index.html` is in the repository.
 | Up / down | `E` / `Q` |
 | Swim faster | `Shift` |
 | Jump to a viewpoint | `1` – `6` |
+| Night / helmet lamp / kraken | `N` / `F` / `K` |
 | Helmet off / instruments off | `V` / `G` |
 | Sound / frame counter / menu | `M` / `H` / `Esc` |
 
 On a touchscreen: hold a finger down to swim forward, slide it to steer, put a second finger down to go faster.
-The detail level (low / medium / high) is chosen in the menu. If the frame rate is too low, the render resolution drops by itself.
+The detail level (low / medium / high) and the two modes (kraken, night) are chosen in the menu; the modes are remembered. If the frame rate is too low, the render resolution drops by itself.
 
 ## Build
 
@@ -69,6 +74,18 @@ node build.mjs --dev   # same, but the code stays readable (easier to debug in t
 If `npm install` warns that install scripts were not run for esbuild, or (on Node older than 22) about the engine
 required by `puppeteer-core`, the build still works.
 
+## Modes
+
+- **Kraken** (on by default, `K`): a giant octopus, a 17 m mantle trailing eight 40 m arms with glowing suckers, sweeps a long
+  loop through the basin. It passes low in front of the whale tail, fades into the haze, and comes back over the start. It casts
+  a shadow on the seabed, calls when it is near, and the instruments report its range.
+- **Night** (`N`): moonlight instead of sunlight. The helmet lamp (`F`) lights what you look at and shows as a beam in the
+  drifting particles. Kelp blades light up in waves that climb the stalks, fish carry a bright lateral line, mantas, corals,
+  ground cover and the kraken glow, and the lava becomes the main light on the seabed.
+
+The kraken is `src/kraken.js` plus the `vsKrak*` / `fsKrak` shaders; its path is a few lines in `main.js`. Night is the
+`G.env.x` factor throughout `shaders.js`, and `torchAt` is the lamp.
+
 ## The view from the helmet
 
 You look out through the visor of a fantasy diving suit: a dark rim with a thin glowing seam (it turns red near lava),
@@ -91,6 +108,7 @@ All of this lives in `fsComp` (`shaders.js`), the "the helmet" block in `main.js
 | `src/main.js` | The renderer, camera, controls, helmet behaviour, detail levels |
 | `src/meshes.js` | Procedural meshes: rocks, corals, sponges, ground cover, manta, fish |
 | `src/ruins.js` | Meshes of the ruins: columns, blocks, arches |
+| `src/kraken.js` | The kraken: mantle mesh and the arm grids that the vertex shader bends |
 | `src/audio.js` | The synthesised soundscape (Web Audio) |
 | `template.html` | The page around the scene: menu, instruments, styles |
 | `build.mjs` | The build script |
@@ -99,7 +117,8 @@ Some easy tweaks:
 
 - **Lava:** hot spots are placed in `world.js` (`addSpot`); the look of the cracks and the glow is the "volcanic seabed"
   block in `fsStatic` and `LAVAC` in `shaders.js`.
-- **Ruins:** the "the drowned city" block in `world.js`.
+- **Ruins:** the "the drowned city" block in `world.js`. The first view is laid out by hand, in metres ahead of and to the
+  right of the start.
 - **Water and sunlight colours:** `WCOL`, `DCOL`, `PCOL` and `SUNC` at the top of `shaders.js`.
 - **Brightness, light shafts, bloom, swimming speed:** `EXPOSURE`, `RAYS`, `BLOOM` and `22 : 6.5` in `main.js`.
 - **Brightness of the instruments:** `#visor.on { opacity }` in `template.html`.

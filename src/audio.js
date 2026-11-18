@@ -98,6 +98,16 @@ export class Sound {
     }
   }
 
+  // the kraken's call: a very low, slow groan that fills the water; `near` is 0 (far) .. 1 (right here)
+  kraken(near) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.on) return;
+    const g = 0.05 + 0.11 * near;
+    this.voice('sine', 58, 36, 5.2, g, 1.6, 3);
+    this.voice('triangle', 116, 74, 4.4, g * 0.35, 1.2, 5, 0.3);
+    this.burst(4.6, 'lowpass', 230, 90, 0.7, g * 0.5, this.wet, 1.5);
+  }
+
   // called every frame; only allocates when a new sound actually starts
   update(cam, surf, heat = 0, helmet = 0) {
     const ctx = this.ctx;

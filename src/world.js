@@ -16,7 +16,7 @@ export const C = {
 };
 // Fixed viewpoints (keys 1-6): x, y, z, yaw, pitch
 export const VIEWS = [
-  [2, 7.5, 23, -0.15, 0.25],
+  [2, 7.5, 23, -0.15, 0.15],
   [58, 10, 36, 0.86, 0.08],
   [3, 7.6, 43, 1.02, 0.06],
   [36, 15, -58, 0.75, -0.12],
@@ -183,7 +183,7 @@ export async function buildWorld(dev, Q, progress) {
   // ---------- lava hot spots: where the cracks glow, smoke rises and nothing grows ----------
   const spots = [];
   const addSpot = (x, z, r) => { const y = floorAt(x, z); if (y < 22 && spots.length < 16) spots.push([x, y + 0.4, z, r]); };
-  for (const s of [[8, 13, 6.5], [-6, 6, 5.5], [3, -4, 5], [14, 40, 5.5], [37, 33, 5], [-18, 2, 5], [-32, 16, 4.5]]) addSpot(...s);
+  for (const s of [[2, 13, 7.5], [-6, 6, 5.5], [3, -4, 5], [14, 40, 5.5], [37, 33, 5], [-18, 2, 5], [-32, 16, 4.5]]) addSpot(...s);
   for (let tries = 0; spots.length < 16 && tries < 600; tries++) {
     const a = R() * 6.283, r = 30 + R() * 82, x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (Math.hypot(x - POI.sponge[0], z - POI.sponge[1]) < 30 || Math.hypot(x - POI.ship[0], z - POI.ship[1]) < 16 || spots.some((s) => Math.hypot(x - s[0], z - s[2]) < 28)) continue;
@@ -289,7 +289,9 @@ export async function buildWorld(dev, Q, progress) {
     coralMesh(21), coralMesh(22), coralMesh(23), coralMesh(24, 1), coralMesh(25, 1), spongeMesh(31, 1), spongeMesh(32, 1), spongeMesh(33, 4), spongeMesh(34, 6),
     // ruins: whole column, broken column, stump, drum, block, beam, slab, arch, broken arch
     columnMesh(41, 6.5, true, true), columnMesh(42, 4.3, true, false), columnMesh(43, 1.9, true, false), columnMesh(44, 1.0, false, false, true),
-    blockMesh(45, 1.2, 0.8, 0.9), blockMesh(46, 4.7, 0.7, 0.95), blockMesh(47, 2.6, 0.3, 1.6), archMesh(48, false), archMesh(49, true)];
+    blockMesh(45, 1.2, 0.8, 0.9), blockMesh(46, 4.7, 0.7, 0.95), blockMesh(47, 2.6, 0.3, 1.6), archMesh(48, false), archMesh(49, true),
+    // lengths of fallen shaft, snapped off at one end
+    columnMesh(50, 3.4, false, false, false), columnMesh(51, 5.4, false, false, false)];
   const RU = 15; W.ruinStart = RU;
   const props = meshes.map(() => new Recs(9));
   const addProp = (mi, x, y, z, sc, nx, ny, nz, r, g, b, fl = 0, yaw = R() * 6.283) => {
@@ -386,15 +388,41 @@ export async function buildWorld(dev, Q, progress) {
       if (u < 0.45) ruin(4, x, y - 0.25 * s, z, s, R() * 6.283, tilt(9), 1, tilt(9));
       else if (u < 0.62) ruin(6, x, y - 0.1 * s, z, s, R() * 6.283, tilt(5), 1, tilt(5));
       else if (u < 0.8) ruin(3, x, y + 0.36 * s, z, s, R() * 6.283, R() - 0.5, 0.1 * R(), R() - 0.5);
-      else if (u < 0.9) ruin(2, x, y - 0.2, z, s, R() * 6.283, tilt(4), 1, tilt(4));
+      else if (u < 0.85) ruin(2, x, y - 0.2, z, s, R() * 6.283, tilt(4), 1, tilt(4));
+      else if (u < 0.93) { const d = R() * 6.283; ruin(R() < 0.5 ? 9 : 10, x, y + 0.44 * s, z, s, R() * 6.283, Math.cos(d), R() * 0.12, Math.sin(d)); }
       else ruin(5, x, y - 0.2 * s, z, s, R() * 6.283, tilt(4), 1, tilt(4));
     }
   };
   {
     // processional avenue from the start to the whale
     const S0 = POI.start, Wh = POI.whale, al = Math.hypot(Wh[0] - S0[0], Wh[1] - S0[1]), ax = (Wh[0] - S0[0]) / al, az = (Wh[1] - S0[1]) / al;
-    for (const sd of [-1, 1]) colonnade(S0[0] + ax * 5 - az * 7.5 * sd, S0[1] + az * 5 + ax * 7.5 * sd, ax, az, 6, 1, 0.55);
-    rubble(S0[0] + ax * 14, S0[1] + az * 14, 15, 46, 1);
+    // The first view is composed like a painting. Positions are (metres ahead of the start, metres to the right).
+    const at = (f, r) => [S0[0] + ax * f - az * r, S0[1] + az * f + ax * r];
+    const stand = (k, f, r, sc, lean = 1) => { const p = at(f, r); ruin(k, p[0], floorAt(p[0], p[1]) - 0.2, p[1], sc, R() * 6.283, tilt(lean), 1, tilt(lean)); };
+    // a shaft lying on its side, pointing along `dir` (0 = away from the viewer); `lift` props one end up on its neighbours
+    const lay = (k, f, r, dir, sc, lift = 0) => {
+      const p = at(f, r), dx = ax * Math.cos(dir) - az * Math.sin(dir), dz = az * Math.cos(dir) + ax * Math.sin(dir);
+      ruin(k, p[0], floorAt(p[0], p[1]) + (lift ? 0.2 : 0.44) * sc, p[1], sc, R() * 6.283, dx, lift, dz);
+    };
+    const faceYaw = Math.atan2(-ax, -az);            // turns an arch square to the viewer
+    // left: a heap of toppled shafts, one propped across the others, stumps behind
+    lay(10, 13, -8, 0.5, 1.1); lay(9, 11.5, -10.5, -0.9, 1.1); lay(10, 14.5, -11, 1.9, 1.0, 0.34); lay(3, 10, -7.2, 2.4, 1.2);
+    lay(3, 12.6, -5.8, 0.3, 1.1); lay(9, 16.5, -7, -0.3, 1.0, 0.2); lay(0, 19, -13, 1.2, 1.0);
+    stand(2, 14.5, -13.5, 1.1, 4); stand(1, 18.5, -9.5, 1.0, 5);
+    // middle distance: one column still whole, the stub of an arch beyond the lava
+    stand(0, 27, 3.5, 1.05, 1.5); stand(2, 23, 0.5, 1.0, 5);
+    { const p = at(25, -4.5); ruin(8, p[0], floorAt(p[0], p[1]) - 0.5, p[1], 1.05, faceYaw + 0.5, tilt(3), 1, tilt(3)); }
+    // right: the great gate, leaning, with what fell from it at its feet
+    { const p = at(20, 12); ruin(7, p[0], floorAt(p[0], p[1]) - 0.6, p[1], 1.55, faceYaw - 0.35, 0.05, 1, -0.03); }
+    stand(1, 17.5, 7.5, 1.1, 4); stand(2, 22.5, 17, 1.2, 5);
+    lay(10, 15, 9.5, 2.7, 1.1); lay(3, 13.5, 12.5, 1.2, 1.2); lay(9, 17.5, 15, 0.8, 1.0, 0.25);
+    // foreground: carved blocks half sunk into the plates
+    for (const [k, f, r, sc] of [[5, 7.5, 5.5, 1.0], [6, 6, -2.8, 1.1], [4, 9.5, 2, 1.3], [4, 5.5, 7.8, 1.1], [6, 10.5, -3.5, 0.9], [4, 12, 5.5, 1.0], [5, 16, 2.5, 0.9]]) {
+      const p = at(f, r); ruin(k, p[0], floorAt(p[0], p[1]) - 0.22 * sc, p[1], sc, R() * 6.283, tilt(6), 1, tilt(6));
+    }
+    rubble(S0[0] + ax * 17, S0[1] + az * 17, 17, 34, 1);
+    // nearer the whale a few columns of the old avenue are left
+    for (const sd of [-1, 1]) { const p = at(29, 9 * sd); colonnade(p[0], p[1], ax, az, 2, 1, 0.5); }
     // temple: a ring of columns on a paved floor, broken walls inside
     const T = POI.temple, ty = 0.45, c = Math.cos(ty), sn = Math.sin(ty), sc = 1.05, st = 4.4 * sc;
     const tw = (lx, lz) => [T[0] + lx * c + lz * sn, T[1] - lx * sn + lz * c];

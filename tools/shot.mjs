@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { existsSync, mkdirSync } from 'node:fs';
 
 const args = process.argv.slice(2);
-const opt = (k, d) => { const a = args.find((x) => x.startsWith(`--${k}=`)); return a ? a.split('=')[1] : d; };
+const opt = (k, d) => { const a = args.find((x) => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d; };
 const shots = args.filter((a) => !a.startsWith('--'));
 const W = +opt('w', 1600), H = +opt('h', 900), t = opt('t', '20'), q = opt('q', 'high'), prefix = opt('out', 'v');
 const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe'].find(existsSync);
@@ -23,7 +23,7 @@ let errors = 0;
 page.on('console', (m) => { const s = m.text(); if (s.includes('powerPreference')) return; if (m.type() === 'error' || m.type() === 'warn') { errors++; console.log(`[${m.type()}]`, s.slice(0, 1500)); } else if (!s.includes('powerPreference')) console.log('[log]', s.slice(0, 600)); });
 page.on('pageerror', (e) => { errors++; console.log('[pageerror]', e.message); });
 const t0 = Date.now();
-await page.goto(`${pathToFileURL('index.html').href}?shot=1&t=${t}&q=${q}`);
+await page.goto(`${pathToFileURL('index.html').href}?shot=1&t=${t}&q=${q}${opt('url', '') ? '&' + opt('url', '').replace(/,/g, '&') : ''}`);
 try {
   await page.waitForFunction('window.__ready', { timeout: 120000 });
 } catch (e) {
